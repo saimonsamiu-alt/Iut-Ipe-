@@ -538,6 +538,60 @@ function RoutineTab({mode,setMode}){
   );
 }
 
+/* ─── INSTALL BUTTON ─────────────────────────── */
+function InstallButton(){
+  const [prompt,setPrompt]   = useState(null);
+  const [installed,setInstalled] = useState(false);
+  const [isIOS,setIsIOS]     = useState(false);
+  const [showIOSHint,setShowIOSHint] = useState(false);
+
+  useEffect(()=>{
+    const handler=(e)=>{ e.preventDefault(); setPrompt(e); };
+    window.addEventListener("beforeinstallprompt",handler);
+    window.addEventListener("appinstalled",()=>setInstalled(true));
+    if(window.matchMedia("(display-mode: standalone)").matches) setInstalled(true);
+    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone);
+    return ()=>window.removeEventListener("beforeinstallprompt",handler);
+  },[]);
+
+  const doInstall=async()=>{
+    if(isIOS){ setShowIOSHint(true); return; }
+    if(!prompt) return;
+    prompt.prompt();
+    await prompt.userChoice;
+    setPrompt(null);
+  };
+
+  if(installed) return null;
+  if(!prompt && !isIOS) return null;
+
+  return (
+    <>
+      <button onClick={doInstall} style={{
+        marginLeft:6,padding:"8px 14px",fontSize:11,fontWeight:700,cursor:"pointer",
+        border:"1px solid #38BDF8",background:"#0C2340",color:"#38BDF8",borderRadius:6,
+        display:"flex",alignItems:"center",gap:5,
+      }}>
+        📲 Install App
+      </button>
+      {showIOSHint && (
+        <div onClick={()=>setShowIOSHint(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0F172A",border:"1px solid #1E293B",borderRadius:16,padding:"24px 20px",maxWidth:320,textAlign:"center"}}>
+            <div style={{fontSize:28,marginBottom:10}}>📲</div>
+            <div style={{fontSize:14,fontWeight:800,color:"#F8FAFC",marginBottom:12}}>iPhone-এ Install করুন</div>
+            <div style={{fontSize:12,color:"#94A3B8",lineHeight:1.8,textAlign:"left"}}>
+              1️⃣ নিচে <strong style={{color:"#38BDF8"}}>Share</strong> বাটনে ট্যাপ করুন (□↑)<br/>
+              2️⃣ <strong style={{color:"#38BDF8"}}>"Add to Home Screen"</strong> খুঁজুন<br/>
+              3️⃣ <strong style={{color:"#38BDF8"}}>"Add"</strong> চাপুন
+            </div>
+            <button onClick={()=>setShowIOSHint(false)} style={{marginTop:16,padding:"8px 20px",background:"#38BDF8",border:"none",borderRadius:8,color:"#080D18",fontSize:12,fontWeight:700,cursor:"pointer"}}>বুঝেছি</button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 /* ─── MAIN APP ──────────────────────────────── */
 export default function App(){
   const [authed,setAuthed]   = useState(false);
@@ -602,6 +656,7 @@ export default function App(){
             </button>
           ))}
           <button onClick={()=>{localStorage.removeItem(AUTH_KEY);setAuthed(false);setDone({});}} style={{marginLeft:6,padding:"8px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid #334155",background:"transparent",color:"#475569",borderRadius:6}}>Logout</button>
+          <InstallButton/>
         </div>
       </div>
 
