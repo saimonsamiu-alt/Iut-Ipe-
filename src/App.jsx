@@ -595,6 +595,20 @@ function useNotifications(mode){
         if(pending.length>0) notify("📚 Pending Class Review",`${pending.length}টা topic এখনো review বাকি — App-এ দেখুন।`);
         fired={...fired,eveningNudge:true}; saveLS(firedKey,fired);
       }
+
+      // Hourly "haven't studied yet" reminder with escalating punishment warning (5 AM – 11 PM only)
+      if(hh>=5 && hh<=23 && !wasStudied(todayStr())){
+        const lastPing = fired.lastStudyPing || 0;
+        const nowMs = now.getTime();
+        if(nowMs - lastPing >= 60*60*1000){ // 1 hour gap
+          const projectedStreak = Math.min(getMissStreak()+1, 7);
+          const projectedMin = getPunishMinutes(projectedStreak);
+          const h = Math.floor(projectedMin/60), m2 = projectedMin%60;
+          const durLabel = h>0 ? `${h} ঘণ্টা ${m2>0?m2+" মিনিট":""}` : `${m2} মিনিট`;
+          notify("⚠️ এখনো পড়া হয়নি!",`কমপক্ষে ১টা subject-task tick করুন — নাহলে আগামীকাল ${durLabel} punishment reading হবে।`);
+          fired={...fired,lastStudyPing:nowMs}; saveLS(firedKey,fired);
+        }
+      }
     };
     const id=setInterval(check,30000);
     check();
@@ -672,6 +686,308 @@ function InstallButton(){
   );
 }
 
+/* ─── PUNISHMENT READING ─────────────────────── */
+const PUNISH_BOOK_KEY  = "punish-book-v1";      // {title, pages:[string,...]}
+const PUNISH_STATE_KEY = "punish-state-v1";      // {pointer, completedDates:[date,...]}
+const yesterdayStr = () => { const d=new Date(); d.setDate(d.getDate()-1); return fmtDate(d); };
+
+// A routine task counts as "study" if it mentions a course code, a class, or revision/practice
+function isStudyTask(text){
+  return /Math 4111|ME 415[12]|IPE 410[18]|Chem 4115|Phy 4113|Hum 41(12|14|17)|Class:|Class Review|revision|buffer|problem practice|deep study/i.test(text);
+}
+
+// Auto-detect: was ANY study-hour task ticked done on this date? (uses saved routine mode)
+function wasStudied(date){
+  const mode = loadLS(MODE_KEY,"pre");
+  const [y,m,d] = date.split("-").map(Number);
+  const dayN = JS_DAY[new Date(y,m-1,d).getDay()];
+  const tasks = (ROUTINE[mode] && ROUTINE[mode][dayN]) || [];
+  const rd = loadRtn(date);
+  const done = rd.done || [];
+  return tasks.some((item,i)=> isStudyTask(item.task) && done[i]);
+}
+
+function shouldPunishToday(){
+  const book=loadLS(PUNISH_BOOK_KEY,{title:"",pages:[]});
+  if(!book.pages || book.pages.length===0) return false;
+  const state=loadLS(PUNISH_STATE_KEY,{pointer:0,completedDates:[]});
+  if(state.completedDates.includes(todayStr())) return false; // already done today
+  return !wasStudied(yesterdayStr());
+}
+
+// Count consecutive missed-study days ending yesterday (capped at 7 for escalation)
+function getMissStreak(){
+  let streak=0, d=new Date(); d.setDate(d.getDate()-1);
+  while(streak<7){
+    const ds=fmtDate(d);
+    if(wasStudied(ds)) break;
+    streak++; d.setDate(d.getDate()-1);
+  }
+  return Math.max(streak,1);
+}
+
+// Escalating duration: day1=5min ... day7≈120min (2hr), capped at 120
+const PUNISH_STEPS_MIN=[5,24,43,62,81,100,120];
+function getPunishMinutes(streak){
+  const idx=Math.min(streak,PUNISH_STEPS_MIN.length)-1;
+  return PUNISH_STEPS_MIN[idx];
+}
+
+/* Book manager — add/edit pages */
+function PunishmentBookManager(){
+  const [book,setBook]     = useState(()=>loadLS(PUNISH_BOOK_KEY,{title:"",pages:[]}));
+  const [state,setState]   = useState(()=>loadLS(PUNISH_STATE_KEY,{pointer:0,completedDates:[]}));
+  const [newPage,setNewPage] = useState("");
+  const [title,setTitle]   = useState(book.title||"");
+  const [bulkText,setBulkText] = useState("");
+  const [splitMode,setSplitMode] = useState("words200");
+  const [bulkMode,setBulkMode] = useState(false);
+
+  const save=(b)=>{ setBook(b); saveLS(PUNISH_BOOK_KEY,b); };
+
+  const addPage=()=>{
+    if(!newPage.trim()) return;
+    const updated={title,pages:[...book.pages,newPage.trim()]};
+    save(updated); setNewPage("");
+  };
+
+  const splitBulk=(text,mode)=>{
+    const clean=text.trim();
+    if(!clean) return [];
+    if(mode==="single") return [clean];
+    if(mode==="blank") return clean.split(/\n\s*\n+/).map(p=>p.trim()).filter(Boolean);
+    // words200 — chunk every ~200 words
+    const words=clean.split(/\s+/).filter(Boolean);
+    const chunks=[];
+    for(let i=0;i<words.length;i+=200) chunks.push(words.slice(i,i+200).join(" "));
+    return chunks;
+  };
+
+  const processBulk=()=>{
+    const newPages=splitBulk(bulkText,splitMode);
+    if(newPages.length===0) return;
+    const updated={title,pages:[...book.pages,...newPages]};
+    save(updated); setBulkText(""); setBulkMode(false);
+  };
+  const deletePage=(i)=>{
+    const updated={title,pages:book.pages.filter((_,idx)=>idx!==i)};
+    save(updated);
+    if(state.pointer>=updated.pages.length && updated.pages.length>0){
+      const ns={...state,pointer:0}; setState(ns); saveLS(PUNISH_STATE_KEY,ns);
+    }
+  };
+  const saveTitle=()=>{ save({...book,title}); };
+
+  return (
+    <div>
+      <div style={{fontSize:11,color:"#475569",lineHeight:1.6,marginBottom:14,background:"#0F172A",border:"1px solid #1E293B",borderRadius:10,padding:"10px 14px"}}>
+        📕 আপনার বই থেকে page-by-page text paste করুন (copyright-এর কারণে আমি বইয়ের টেক্সট লিখে দিতে পারি না — আপনি নিজে paste করুন)। যেদিন "আজ পড়েছি" মার্ক করা হবে না, পরদিন app খুললে এখান থেকে পরের page আসবে reading punishment হিসেবে।
+      </div>
+
+      <div style={{marginBottom:14}}>
+        <label style={{fontSize:10,color:"#475569",display:"block",marginBottom:4}}>বইয়ের নাম</label>
+        <input value={title} onChange={e=>setTitle(e.target.value)} onBlur={saveTitle}
+          placeholder="যেমন: Deep Work"
+          style={{width:"100%",padding:"9px 12px",background:"#1E293B",border:"1px solid #334155",borderRadius:7,color:"#E2E8F0",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+      </div>
+
+      <div style={{display:"flex",gap:4,marginBottom:12}}>
+        <button onClick={()=>setBulkMode(false)} style={{flex:1,padding:"7px",fontSize:11,fontWeight:700,cursor:"pointer",border:`1px solid ${!bulkMode?"#38BDF8":"#1E293B"}`,borderRadius:7,background:!bulkMode?"#0C2340":"#0F172A",color:!bulkMode?"#38BDF8":"#64748B"}}>একটা Page</button>
+        <button onClick={()=>setBulkMode(true)} style={{flex:1,padding:"7px",fontSize:11,fontWeight:700,cursor:"pointer",border:`1px solid ${bulkMode?"#38BDF8":"#1E293B"}`,borderRadius:7,background:bulkMode?"#0C2340":"#0F172A",color:bulkMode?"#38BDF8":"#64748B"}}>📚 Bulk Upload (পুরো বই)</button>
+      </div>
+
+      {!bulkMode ? (
+        <div style={{marginBottom:14}}>
+          <label style={{fontSize:10,color:"#475569",display:"block",marginBottom:4}}>নতুন Page যোগ করুন (Page {book.pages.length+1})</label>
+          <textarea value={newPage} onChange={e=>setNewPage(e.target.value)}
+            placeholder="বইয়ের page-টা এখানে paste করুন..."
+            rows={5}
+            style={{width:"100%",padding:"9px 12px",background:"#1E293B",border:"1px solid #334155",borderRadius:7,color:"#E2E8F0",fontSize:12,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.5,fontFamily:"inherit"}}/>
+          <button onClick={addPage} style={{marginTop:8,padding:"8px 16px",background:"#38BDF8",border:"none",borderRadius:7,color:"#080D18",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Page যোগ করুন</button>
+        </div>
+      ) : (
+        <div style={{marginBottom:14,background:"#0F172A",border:"1px solid #38BDF8",borderRadius:10,padding:14}}>
+          <label style={{fontSize:10,color:"#475569",display:"block",marginBottom:4}}>পুরো বই / অনেকগুলো page একসাথে Paste করুন</label>
+          <textarea value={bulkText} onChange={e=>setBulkText(e.target.value)}
+            placeholder="পুরো বইয়ের টেক্সট এখানে paste করুন — automatically ছোট ছোট page-এ ভাগ হয়ে যাবে..."
+            rows={8}
+            style={{width:"100%",padding:"9px 12px",background:"#1E293B",border:"1px solid #334155",borderRadius:7,color:"#E2E8F0",fontSize:12,outline:"none",boxSizing:"border-box",resize:"vertical",lineHeight:1.5,fontFamily:"inherit"}}/>
+
+          <div style={{marginTop:10,marginBottom:10}}>
+            <label style={{fontSize:10,color:"#475569",display:"block",marginBottom:5}}>কীভাবে ভাগ হবে?</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {[["words200","প্রতি ~200 শব্দে ১ page (recommended)"],["blank","খালি লাইন অনুযায়ী (আপনার paragraph)"],["single","ভাগ করবেন না — একটাই বড় page"]].map(([key,lbl])=>(
+                <button key={key} onClick={()=>setSplitMode(key)}
+                  style={{padding:"5px 10px",fontSize:10,fontWeight:600,cursor:"pointer",border:`1px solid ${splitMode===key?"#38BDF8":"#334155"}`,borderRadius:6,background:splitMode===key?"#0C2340":"transparent",color:splitMode===key?"#38BDF8":"#64748B"}}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {bulkText.trim() && (
+            <div style={{fontSize:11,color:"#34D399",marginBottom:10}}>
+              ✓ প্রায় {splitBulk(bulkText,splitMode).length}টা page তৈরি হবে
+            </div>
+          )}
+
+          <button onClick={processBulk} style={{width:"100%",padding:"9px",background:"#38BDF8",border:"none",borderRadius:7,color:"#080D18",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            📚 সব Page যোগ করুন
+          </button>
+        </div>
+      )}
+
+      <div style={{fontSize:11,fontWeight:700,color:"#94A3B8",marginBottom:8}}>
+        মোট {book.pages.length}টা page যোগ করা আছে · এখন পরের punishment-এ আসবে: <span style={{color:"#F97316"}}>Page {book.pages.length>0?(state.pointer%book.pages.length)+1:"—"}</span>
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {book.pages.map((p,i)=>(
+          <div key={i} style={{background:"#0F172A",border:`1px solid ${i===state.pointer%Math.max(book.pages.length,1)?"#F97316":"#1E293B"}`,borderRadius:8,padding:"9px 12px",display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,fontWeight:700,color:i===state.pointer%Math.max(book.pages.length,1)?"#F97316":"#475569",marginBottom:3}}>Page {i+1}{i===state.pointer%Math.max(book.pages.length,1)&&" ← Next"}</div>
+              <div style={{fontSize:11,color:"#64748B",lineHeight:1.4,maxHeight:40,overflow:"hidden"}}>{p.slice(0,120)}{p.length>120?"...":""}</div>
+            </div>
+            <button onClick={()=>deletePage(i)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:13,flexShrink:0}}>🗑</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* Full-screen punishment overlay with voice verification */
+function PunishmentOverlay({onComplete}){
+  const book  = loadLS(PUNISH_BOOK_KEY,{title:"",pages:[]});
+  const state = loadLS(PUNISH_STATE_KEY,{pointer:0,completedDates:[]});
+  const pageIdx = state.pointer % book.pages.length;
+  const pageText = book.pages[pageIdx] || "";
+
+  const [phase,setPhase]       = useState("intro"); // intro | reading | done
+  const [elapsed,setElapsed]   = useState(0);
+  const [matchPct,setMatchPct] = useState(0);
+  const [heard,setHeard]       = useState("");
+  const [supported,setSupported] = useState(true);
+  const streak = getMissStreak();
+  const punishMinutes = getPunishMinutes(streak);
+  const MIN_SECONDS = punishMinutes*60;
+  const MATCH_THRESHOLD = 55; // % of target words heard
+
+  const targetWords = pageText.toLowerCase().replace(/[^\w\sঀ-৿]/g,"").split(/\s+/).filter(Boolean);
+
+  useEffect(()=>{
+    if(phase!=="reading") return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ setSupported(false); }
+
+    const timer=setInterval(()=>setElapsed(e=>e+1),1000);
+
+    let recognition;
+    if(SR){
+      recognition=new SR();
+      recognition.continuous=true;
+      recognition.interimResults=true;
+      recognition.lang="en-US";
+      let finalTranscript="";
+      recognition.onresult=(ev)=>{
+        let interim="";
+        for(let i=ev.resultIndex;i<ev.results.length;i++){
+          if(ev.results[i].isFinal) finalTranscript+=" "+ev.results[i][0].transcript;
+          else interim+=ev.results[i][0].transcript;
+        }
+        const full=(finalTranscript+" "+interim).toLowerCase();
+        setHeard(full.trim().slice(-200));
+        const heardWords=new Set(full.replace(/[^\w\sঀ-৿]/g,"").split(/\s+/).filter(Boolean));
+        let matched=0;
+        targetWords.forEach(w=>{ if(heardWords.has(w)) matched++; });
+        setMatchPct(targetWords.length?Math.round((matched/targetWords.length)*100):0);
+      };
+      recognition.onerror=()=>{};
+      recognition.onend=()=>{ if(phase==="reading") try{recognition.start();}catch{} };
+      try{ recognition.start(); }catch{}
+    }
+
+    return ()=>{ clearInterval(timer); if(recognition){ try{recognition.stop();}catch{} } };
+  },[phase]);
+
+  const timeOk = elapsed>=MIN_SECONDS;
+  const matchOk = !supported || matchPct>=MATCH_THRESHOLD;
+  const canFinish = timeOk && (supported ? matchOk : true);
+
+  const finish=()=>{
+    const ns={pointer:state.pointer+1,completedDates:[...state.completedDates,todayStr()].slice(-30)};
+    saveLS(PUNISH_STATE_KEY,ns);
+    setPhase("done");
+    setTimeout(onComplete,1800);
+  };
+
+  const mm=Math.floor(elapsed/60), ss=elapsed%60;
+  const reqH=Math.floor(punishMinutes/60), reqM=punishMinutes%60;
+  const reqLabel = reqH>0 ? `${reqH} ঘণ্টা ${reqM>0?reqM+" মিনিট":""}` : `${reqM} মিনিট`;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"#080D18",zIndex:1000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+      {phase==="intro" && (
+        <div style={{maxWidth:380,textAlign:"center"}}>
+          <div style={{fontSize:44,marginBottom:14}}>📕</div>
+          <div style={{fontSize:18,fontWeight:900,color:"#F87171",marginBottom:6}}>গতকাল পড়া হয়নি!</div>
+          {streak>1 && (
+            <div style={{display:"inline-block",fontSize:11,fontWeight:700,color:"#F97316",background:"#2D1B00",border:"1px solid #F97316",borderRadius:20,padding:"4px 12px",marginBottom:10}}>
+              🔥 {streak} দিন consecutive miss — punishment বেড়ে গেছে!
+            </div>
+          )}
+          <div style={{fontSize:13,color:"#94A3B8",lineHeight:1.7,marginBottom:10}}>
+            {book.title&&<>"<strong style={{color:"#E2E8F0"}}>{book.title}</strong>"-এর </>}
+            Page {pageIdx+1} জোরে জোরে পড়তে হবে{supported?" এবং আসলেই পড়ছেন কিনা voice দিয়ে check হবে":""}।
+          </div>
+          <div style={{fontSize:22,fontWeight:900,color:"#F87171",marginBottom:20}}>⏱ {reqLabel}</div>
+          <button onClick={()=>setPhase("reading")} style={{padding:"12px 28px",background:"linear-gradient(135deg,#F87171,#EF4444)",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+            শুরু করুন →
+          </button>
+        </div>
+      )}
+
+      {phase==="reading" && (
+        <div style={{maxWidth:480,width:"100%",display:"flex",flexDirection:"column",height:"100%",maxHeight:640}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{fontSize:11,color:"#475569"}}>Page {pageIdx+1}{book.title&&` · ${book.title}`}</div>
+            <div style={{fontSize:13,fontWeight:800,color:timeOk?"#34D399":"#38BDF8"}}>{mm}:{String(ss).padStart(2,"0")} / {reqH>0?`${reqH}:${String(reqM).padStart(2,"0")}:00`:`${reqM}:00`}</div>
+          </div>
+
+          <div style={{flex:1,overflow:"auto",background:"#0F172A",border:"1px solid #1E293B",borderRadius:12,padding:"18px 16px",fontSize:15,lineHeight:1.9,color:"#E2E8F0",marginBottom:14}}>
+            {pageText}
+          </div>
+
+          {supported ? (
+            <div style={{marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#475569",marginBottom:4}}>
+                <span>🎙 শোনা যাচ্ছে</span><span style={{color:matchOk?"#34D399":"#F97316",fontWeight:700}}>{matchPct}% matched</span>
+              </div>
+              <div style={{height:6,background:"#1E293B",borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:"100%",width:`${Math.min(matchPct,100)}%`,background:matchOk?"#34D399":"#F97316",transition:"width 0.3s"}}/>
+              </div>
+            </div>
+          ) : (
+            <div style={{fontSize:11,color:"#F97316",marginBottom:12,textAlign:"center"}}>⚠️ এই browser voice detect করতে পারছে না — শুধু ৫ মিনিট timer মানতে হবে।</div>
+          )}
+
+          <button onClick={finish} disabled={!canFinish}
+            style={{padding:"13px",background:canFinish?"linear-gradient(135deg,#34D399,#10B981)":"#1E293B",border:"none",borderRadius:12,color:canFinish?"#080D18":"#475569",fontSize:14,fontWeight:800,cursor:canFinish?"pointer":"default"}}>
+            {!timeOk?`⏱ আরও ${Math.ceil((MIN_SECONDS-elapsed)/60)} মিনিট বাকি`:!matchOk?"🎙 আরও জোরে পড়ুন":"✅ শেষ করুন"}
+          </button>
+        </div>
+      )}
+
+      {phase==="done" && (
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:44,marginBottom:10}}>🎉</div>
+          <div style={{fontSize:16,fontWeight:800,color:"#34D399"}}>ভালো! আগামীকাল পড়াশোনা করবেন 💪</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── MAIN APP ──────────────────────────────── */
 export default function App(){
   const [authed,setAuthed]   = useState(false);
@@ -682,8 +998,18 @@ export default function App(){
   const [mode,setMode]       = useState(()=>loadLS(MODE_KEY,"pre"));
   const [confirmReset,setCR] = useState(false);
   const [flash,setFlash]     = useState(false);
+  const [showPunish,setShowPunish] = useState(false);
+  const [studiedToday,setStudiedToday] = useState(false);
 
   useEffect(()=>{ if(localStorage.getItem(AUTH_KEY)==="true"){setDone(loadLS(COURSE_KEY));setAuthed(true);} setChecked(true); },[]);
+  useEffect(()=>{ if(authed) setShowPunish(shouldPunishToday()); },[authed]);
+  useEffect(()=>{
+    if(!authed) return;
+    const check=()=>setStudiedToday(wasStudied(todayStr()));
+    check();
+    const id=setInterval(check,15000); // reflect routine tab ticks live
+    return ()=>clearInterval(id);
+  },[authed,tab]);
   useEffect(()=>{ saveLS(MODE_KEY,mode); },[mode]);
   useEffect(()=>{
     if(!authed) return;
@@ -702,6 +1028,7 @@ export default function App(){
 
   if(!checked) return null;
   if(!authed) return <LoginScreen onLogin={()=>{setDone(loadLS(COURSE_KEY));setAuthed(true);}}/>;
+  if(showPunish) return <PunishmentOverlay onComplete={()=>setShowPunish(false)}/>;
 
   return (
     <div style={{background:"#080D18",minHeight:"100vh",fontFamily:"system-ui,-apple-system,sans-serif",color:"#E2E8F0",paddingBottom:48}}>
@@ -730,14 +1057,21 @@ export default function App(){
           );})}
         </div>
         <div style={{display:"flex",justifyContent:"center",flexWrap:"wrap",gap:3}}>
-          {[["courses","Courses"],["order","Study Order"],["routine","Routine"]].map(([key,lbl],i)=>(
-            <button key={key} onClick={()=>setTab(key)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===2?"0 6px 6px 0":"0"}}>
+          {[["courses","Courses"],["order","Study Order"],["routine","Routine"],["punish","📕 Reading"]].map(([key,lbl],i)=>(
+            <button key={key} onClick={()=>setTab(key)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===3?"0 6px 6px 0":"0"}}>
               {lbl}
             </button>
           ))}
           <button onClick={()=>{localStorage.removeItem(AUTH_KEY);setAuthed(false);setDone({});}} style={{marginLeft:6,padding:"8px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid #334155",background:"transparent",color:"#475569",borderRadius:6}}>Logout</button>
           <NotifButton mode={mode}/>
           <InstallButton/>
+        </div>
+
+        <div style={{marginTop:12}}>
+          <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 14px",fontSize:11,fontWeight:700,border:`1px solid ${studiedToday?"#34D399":"#F97316"}`,background:studiedToday?"#052E16":"#2D1B00",color:studiedToday?"#34D399":"#F97316",borderRadius:100}}>
+            {studiedToday?"✅ আজ পড়ার task সম্পন্ন":"⚠️ আজ এখনো কোনো পড়ার task tick করেননি"}
+          </span>
+          <div style={{fontSize:9,color:"#334155",marginTop:5}}>Routine-এ study-task tick না করলে আগামীকাল app খুললেই punishment reading আসবে (auto-detect)</div>
         </div>
       </div>
 
@@ -877,6 +1211,13 @@ export default function App(){
 
       {/* ROUTINE */}
       {tab==="routine" && <RoutineTab mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
+
+      {/* PUNISHMENT BOOK */}
+      {tab==="punish" && (
+        <div style={{maxWidth:680,margin:"0 auto",padding:"20px 16px"}}>
+          <PunishmentBookManager/>
+        </div>
+      )}
     </div>
   );
 }
