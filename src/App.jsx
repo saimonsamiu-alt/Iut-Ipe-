@@ -733,6 +733,11 @@ function getPunishMinutes(streak){
   return PUNISH_STEPS_MIN[idx];
 }
 
+// Emergency-exit penalty: extra minutes added to TODAY's required reading, accumulates per use
+const penaltyKey = (date) => `punish-penalty-${date}`;
+function getPenaltyMin(date){ return loadLS(penaltyKey(date),{min:0}).min; }
+function addPenaltyMin(date,extra){ const cur=getPenaltyMin(date); saveLS(penaltyKey(date),{min:cur+extra}); return cur+extra; }
+
 /* Book manager — add/edit pages */
 function PunishmentBookManager(){
   const [book,setBook]     = useState(()=>loadLS(PUNISH_BOOK_KEY,{title:"",pages:[]}));
@@ -868,10 +873,32 @@ function PunishmentOverlay({onComplete}){
   const [matchPct,setMatchPct] = useState(0);
   const [heard,setHeard]       = useState("");
   const [supported,setSupported] = useState(true);
+  const [showExitConfirm,setShowExitConfirm] = useState(false);
   const streak = getMissStreak();
-  const punishMinutes = getPunishMinutes(streak);
+  const basePunishMinutes = getPunishMinutes(streak);
+  const penaltyMin = getPenaltyMin(todayStr());
+  const punishMinutes = basePunishMinutes + penaltyMin;
   const MIN_SECONDS = punishMinutes*60;
   const MATCH_THRESHOLD = 55; // % of target words heard
+
+  // Try fullscreen + trap the Android/browser back button
+  useEffect(()=>{
+    const el=document.documentElement;
+    if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+    window.history.pushState({punish:true},"");
+    const onPop=(e)=>{ window.history.pushState({punish:true},""); setShowExitConfirm(true); };
+    window.addEventListener("popstate",onPop);
+    return ()=>{
+      window.removeEventListener("popstate",onPop);
+      if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    };
+  },[]);
+
+  const doEmergencyExit=()=>{
+    addPenaltyMin(todayStr(),45);
+    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+    onComplete(); // hides overlay for now; will reappear on next app open, with +45 min added
+  };
 
   const targetWords = pageText.toLowerCase().replace(/[^\w\sঀ-৿]/g,"").split(/\s+/).filter(Boolean);
 
@@ -917,6 +944,8 @@ function PunishmentOverlay({onComplete}){
   const finish=()=>{
     const ns={pointer:state.pointer+1,completedDates:[...state.completedDates,todayStr()].slice(-30)};
     saveLS(PUNISH_STATE_KEY,ns);
+    saveLS(penaltyKey(todayStr()),{min:0}); // clear today's penalty once fully completed
+    if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
     setPhase("done");
     setTimeout(onComplete,1800);
   };
@@ -940,10 +969,16 @@ function PunishmentOverlay({onComplete}){
             {book.title&&<>"<strong style={{color:"#E2E8F0"}}>{book.title}</strong>"-এর </>}
             Page {pageIdx+1} জোরে জোরে পড়তে হবে{supported?" এবং আসলেই পড়ছেন কিনা voice দিয়ে check হবে":""}।
           </div>
+          {penaltyMin>0 && (
+            <div style={{fontSize:11,color:"#F97316",marginBottom:10}}>+{penaltyMin} মিনিট আগের emergency exit penalty যুক্ত আছে</div>
+          )}
           <div style={{fontSize:22,fontWeight:900,color:"#F87171",marginBottom:20}}>⏱ {reqLabel}</div>
-          <button onClick={()=>setPhase("reading")} style={{padding:"12px 28px",background:"linear-gradient(135deg,#F87171,#EF4444)",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer"}}>
+          <button onClick={()=>setPhase("reading")} style={{padding:"12px 28px",background:"linear-gradient(135deg,#F87171,#EF4444)",border:"none",borderRadius:12,color:"#fff",fontSize:14,fontWeight:800,cursor:"pointer",marginBottom:14}}>
             শুরু করুন →
           </button>
+          <div>
+            <button onClick={()=>setShowExitConfirm(true)} style={{background:"none",border:"none",color:"#334155",fontSize:11,textDecoration:"underline",cursor:"pointer"}}>🚨 Emergency Exit</button>
+          </div>
         </div>
       )}
 
@@ -975,6 +1010,25 @@ function PunishmentOverlay({onComplete}){
             style={{padding:"13px",background:canFinish?"linear-gradient(135deg,#34D399,#10B981)":"#1E293B",border:"none",borderRadius:12,color:canFinish?"#080D18":"#475569",fontSize:14,fontWeight:800,cursor:canFinish?"pointer":"default"}}>
             {!timeOk?`⏱ আরও ${Math.ceil((MIN_SECONDS-elapsed)/60)} মিনিট বাকি`:!matchOk?"🎙 আরও জোরে পড়ুন":"✅ শেষ করুন"}
           </button>
+          <div style={{textAlign:"center",marginTop:10}}>
+            <button onClick={()=>setShowExitConfirm(true)} style={{background:"none",border:"none",color:"#334155",fontSize:11,textDecoration:"underline",cursor:"pointer"}}>🚨 Emergency Exit</button>
+          </div>
+        </div>
+      )}
+
+      {showExitConfirm && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:1100,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#0F172A",border:"1px solid #F87171",borderRadius:16,padding:"24px 20px",maxWidth:320,textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:10}}>🚨</div>
+            <div style={{fontSize:14,fontWeight:800,color:"#F8FAFC",marginBottom:8}}>Emergency Exit করবেন?</div>
+            <div style={{fontSize:12,color:"#94A3B8",lineHeight:1.7,marginBottom:16}}>
+              এখন বের হলে <strong style={{color:"#F87171"}}>+৪৫ মিনিট</strong> penalty যোগ হবে। App আবার খুললেই বাকি reading আবার শুরু করতে হবে, timer রিসেট হয়ে যাবে।
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setShowExitConfirm(false)} style={{flex:1,padding:"10px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94A3B8",fontSize:12,fontWeight:700,cursor:"pointer"}}>বাতিল</button>
+              <button onClick={doEmergencyExit} style={{flex:1,padding:"10px",background:"#F87171",border:"none",borderRadius:8,color:"#080D18",fontSize:12,fontWeight:800,cursor:"pointer"}}>হ্যাঁ, Exit করুন</button>
+            </div>
+          </div>
         </div>
       )}
 
