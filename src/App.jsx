@@ -538,6 +538,86 @@ function RoutineTab({mode,setMode}){
   );
 }
 
+/* ─── NOTIFICATIONS ──────────────────────────── */
+const NOTIF_KEY = "iut-notif-enabled";
+
+function useNotifications(mode){
+  const [enabled,setEnabled]   = useState(()=>loadLS(NOTIF_KEY,{on:false}).on);
+  const [permission,setPerm]   = useState(typeof Notification!=="undefined"?Notification.permission:"unsupported");
+
+  // Fire a notification
+  const notify=(title,body)=>{
+    if(Notification.permission!=="granted") return;
+    try{
+      const vibratePattern=[200,100,200,100,200];
+      if(navigator.serviceWorker && navigator.serviceWorker.controller){
+        navigator.serviceWorker.ready.then(reg=>reg.showNotification(title,{body,icon:"/icon-192.png",badge:"/icon-192.png",vibrate:vibratePattern,requireInteraction:false}));
+      } else {
+        const n=new Notification(title,{body,icon:"/icon-192.png"});
+        if(navigator.vibrate) navigator.vibrate(vibratePattern);
+      }
+    }catch{}
+  };
+
+  const enable=async()=>{
+    if(typeof Notification==="undefined"){ alert("এই browser-এ notification সাপোর্ট নেই।"); return; }
+    const p=await Notification.requestPermission();
+    setPerm(p);
+    if(p==="granted"){
+      setEnabled(true); saveLS(NOTIF_KEY,{on:true});
+      notify("🔔 Notifications On!","এখন থেকে task time ও pending review-এর reminder পাবেন।");
+    }
+  };
+  const disable=()=>{ setEnabled(false); saveLS(NOTIF_KEY,{on:false}); };
+
+  // Check every 60s: task start-times matching current time, and pending reviews once/day at a fixed check
+  useEffect(()=>{
+    if(!enabled || permission!=="granted") return;
+    const firedKey="iut-notif-fired-"+todayStr();
+    let fired=loadLS(firedKey,{});
+
+    const check=()=>{
+      const now=new Date();
+      const hh=now.getHours(), mm=now.getMinutes();
+      const nowLabel=`${hh%12===0?12:hh%12}:${String(mm).padStart(2,"0")} ${hh<12?"AM":"PM"}`;
+      const tasks=ROUTINE[mode][todayName()]||[];
+      tasks.forEach((item,i)=>{
+        const startLabel=item.t.split("–")[0].trim();
+        if(startLabel===nowLabel && !fired[`t${i}`]){
+          notify("⏰ Time to start",item.task);
+          fired={...fired,[`t${i}`]:true}; saveLS(firedKey,fired);
+        }
+      });
+      // Evening pending-review nudge at 8:00 PM once/day
+      if(hh===20 && mm===0 && !fired.eveningNudge){
+        const logs=loadLS(CLASSLOG_KEY,[]);
+        const pending=logs.filter(l=>!l.home||!l.next);
+        if(pending.length>0) notify("📚 Pending Class Review",`${pending.length}টা topic এখনো review বাকি — App-এ দেখুন।`);
+        fired={...fired,eveningNudge:true}; saveLS(firedKey,fired);
+      }
+    };
+    const id=setInterval(check,30000);
+    check();
+    return ()=>clearInterval(id);
+  },[enabled,permission,mode]);
+
+  return {enabled,permission,enable,disable};
+}
+
+function NotifButton({mode}){
+  const {enabled,permission,enable,disable} = useNotifications(mode);
+  if(typeof Notification==="undefined") return null;
+  return (
+    <button onClick={enabled?disable:enable} style={{
+      marginLeft:6,padding:"8px 14px",fontSize:11,fontWeight:700,cursor:"pointer",
+      border:`1px solid ${enabled?"#34D399":"#334155"}`,background:enabled?"#052E16":"transparent",
+      color:enabled?"#34D399":"#475569",borderRadius:6,display:"flex",alignItems:"center",gap:5,
+    }}>
+      {enabled?"🔔 On":"🔕 Notify"}
+    </button>
+  );
+}
+
 /* ─── INSTALL BUTTON ─────────────────────────── */
 function InstallButton(){
   const [prompt,setPrompt]   = useState(null);
@@ -656,6 +736,7 @@ export default function App(){
             </button>
           ))}
           <button onClick={()=>{localStorage.removeItem(AUTH_KEY);setAuthed(false);setDone({});}} style={{marginLeft:6,padding:"8px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid #334155",background:"transparent",color:"#475569",borderRadius:6}}>Logout</button>
+          <NotifButton mode={mode}/>
           <InstallButton/>
         </div>
       </div>
