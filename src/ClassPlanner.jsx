@@ -3,8 +3,8 @@ import { hasConfigUrl, getCfg, setCfg, currentUser, connect as cloudConnect, sig
          listRemotePdfs, uploadPdf, downloadPdf, deleteRemotePdf } from "./cloud.js";
 
 /* ─── storage helpers ───────────────────────── */
-const SCHED_KEY = "iut-sched-v1";   // uploaded routine (localStorage)
-const META_KEY  = "iut-class-meta-v1"; // per-class instruction override + revised tick
+export const SCHED_KEY = "iut-sched-v1";   // uploaded routine (localStorage)
+export const META_KEY  = "iut-class-meta-v1"; // per-class instruction override + revised tick
 const TS_KEY    = "iut-sync-ts-v1";    // last local edit time (cloud last-write-wins)
 const PEND_KEY  = "iut-pending-del-v1"; // PDFs deleted offline, still to delete from cloud
 const loadLS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -26,7 +26,7 @@ const idb = async (mode, fn) => {
     tx.onerror = () => rej(tx.error);
   });
 };
-const getAllPdfs = () => idb("readonly", s => s.getAll()).then(r => r || []);
+export const getAllPdfs = () => idb("readonly", s => s.getAll()).then(r => r || []);
 const putPdf = rec => idb("readwrite", s => s.put(rec));
 const delPdf = id => idb("readwrite", s => s.delete(id));
 
@@ -39,7 +39,7 @@ const toDate = ds => new Date(ds + "T00:00:00");
 const addDays = (ds, n) => { const d = toDate(ds); d.setDate(d.getDate() + n); return fmtDate(d); };
 const niceDate = ds => toDate(ds).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 
-const sortKey = (t = "") => {
+export const sortKey = (t = "") => {
   const ms = [...t.matchAll(/(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?/gi)];
   if (!ms.length) return 0;
   const conv = (m, ap) => { let h = +m[1] % 12; if (ap && ap.toUpperCase() === "PM") h += 12; return h * 60 + (+m[2] || 0); };
@@ -78,12 +78,12 @@ Tuesday,9:15-10:30 AM,Phy 4113,Calculator niye ashbe
 `;
 
 /* ─── component ─────────────────────────────── */
-export default function ClassPlanner({ courses = [], routine = {} }) {
+export default function ClassPlanner({ courses = [], routine = {}, initialView = "daily", initialDate }) {
   const [sched, setSched] = useState(() => loadLS(SCHED_KEY, []));
   const [meta, setMeta] = useState(() => loadLS(META_KEY, {}));
   const [pdfs, setPdfs] = useState([]);
-  const [view, setView] = useState("daily");
-  const [date, setDate] = useState(todayStr());
+  const [view, setView] = useState(initialView || "daily");
+  const [date, setDate] = useState(initialDate || todayStr());
   const [monthOff, setMonthOff] = useState(0);
   const [revMode, setRevMode] = useState("date");
   const [revRange, setRevRange] = useState(30);

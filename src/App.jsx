@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import ClassPlanner from "./ClassPlanner.jsx";
+import TodayHub from "./TodayHub.jsx";
 
 const YOUR_NAME     = "samiu";
 const YOUR_PASSWORD = "iut2025";
@@ -244,8 +245,8 @@ function ClassLog(){
 }
 
 /* ─── ROUTINE TAB ───────────────────────────── */
-function RoutineTab({mode,setMode}){
-  const [rv,setRv]         = useState("today");
+function RoutineTab({mode,setMode,nav={}}){
+  const [rv,setRv]         = useState(nav.rv||"today");
   const [selDay,setSelDay] = useState(todayName());
   const [dayData,setDayData]= useState({});
   const [monthOff,setMO]   = useState(0);
@@ -535,7 +536,7 @@ function RoutineTab({mode,setMode}){
 
       {/* CLASS LOG */}
       {rv==="classlog" && <ClassLog/>}
-      {rv==="planner" && <ClassPlanner courses={COURSES} routine={ROUTINE}/>}
+      {rv==="planner" && <ClassPlanner courses={COURSES} routine={ROUTINE} initialView={nav.view} initialDate={nav.date}/>}
     </div>
   );
 }
@@ -1050,7 +1051,9 @@ export default function App(){
   const [checked,setChecked] = useState(false);
   const [done,setDone]       = useState({});
   const [open,setOpen]       = useState({});
-  const [tab,setTab]         = useState("courses");
+  const [tab,setTab]         = useState("today");
+  const [nav,setNav]         = useState({});
+  const goTo=(n)=>{ setNav(n); setTab(n.rv?"routine":"today"); window.scrollTo(0,0); };
   const [mode,setMode]       = useState(()=>loadLS(MODE_KEY,"pre"));
   const [confirmReset,setCR] = useState(false);
   const [flash,setFlash]     = useState(false);
@@ -1113,8 +1116,8 @@ export default function App(){
           );})}
         </div>
         <div style={{display:"flex",justifyContent:"center",flexWrap:"wrap",gap:3}}>
-          {[["courses","Courses"],["order","Study Order"],["routine","Routine"],["punish","📕 Reading"]].map(([key,lbl],i)=>(
-            <button key={key} onClick={()=>setTab(key)} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===3?"0 6px 6px 0":"0"}}>
+          {[["today","☀️ আজ"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
+            <button key={key} onClick={()=>{setNav({});setTab(key);}} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===arr.length-1?"0 6px 6px 0":"0"}}>
               {lbl}
             </button>
           ))}
@@ -1130,6 +1133,9 @@ export default function App(){
           <div style={{fontSize:9,color:"#334155",marginTop:5}}>Routine-এ study-task tick না করলে আগামীকাল app খুললেই punishment reading আসবে (auto-detect)</div>
         </div>
       </div>
+
+      {/* আজ */}
+      {tab==="today" && <TodayHub mode={mode} routine={ROUTINE} courses={COURSES} rtn={{load:loadRtn,save:saveRtn}} classLogKey={CLASSLOG_KEY} onGoto={goTo}/>}
 
       {/* COURSES */}
       {tab==="courses" && (
@@ -1266,7 +1272,7 @@ export default function App(){
       )}
 
       {/* ROUTINE */}
-      {tab==="routine" && <RoutineTab mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
+      {tab==="routine" && <RoutineTab key={JSON.stringify(nav)} nav={nav} mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
 
       {/* PUNISHMENT BOOK */}
       {tab==="punish" && (
