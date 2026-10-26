@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { sortKey } from "./ClassPlanner.jsx";
-import { SCHED_KEY, META_KEY, BOOK_KEY, getAllPdfs } from "./store.js";
+import { SCHED_KEY, META_KEY, BOOK_KEY, getAllPdfs, saveLS, touchLocal, schedulePush } from "./store.js";
+import { revisionItems, markDone, STAGE_BN } from "./revision.js";
 
 /* ── ছোট helper ── */
 const loadLS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -91,10 +92,10 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
   };
   const courseCode = id => (courses.find(c => c.id === id) || {}).code || id;
 
-  /* ── Revision বাকি: গত ৭ দিনের ক্লাস, যেখানে note/instruction আছে অথচ revise হয়নি ── */
-  const revDue = Array.from({ length: 7 }, (_, i) => addDays(today, -i - 1))
-    .flatMap(occOn)
-    .filter(o => !o.revised && (o.pdfs.length || o.instruction.trim()));
+  /* ── স্বয়ংক্রিয় Revision (ক্লাসের ১, ৩, ৭, ১৪ দিন পর) ── */
+  const rev = revisionItems(sched, meta, today, pdfs);
+  const revDue = rev.due;
+  const doneRev = o => { saveLS(META_KEY, markDone(loadLS(META_KEY, {}), o.occ, today)); touchLocal(); schedulePush(); force(n => n + 1); };
 
   /* ── ভুল-খাতা: খোলা Doubt / ভুল ── */
   const openBook = loadLS(BOOK_KEY, []).filter(e => !e.resolved)
@@ -251,22 +252,26 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
         </div>
       )}
 
-      {/* Revision বাকি */}
-      {revDue.length > 0 && (
-        <div style={card}>
+      {/* আজকের Revision */}
+      {sched.length > 0 && (
+        <div style={{ ...card, borderColor: revDue.length ? "#F59E0B55" : "#1E293B" }}>
           <div style={h}>
-            <span>🔁 Revision বাকি (গত ৭ দিন)</span>
-            <span style={link} onClick={() => onGoto({ rv: "planner", view: "revision" })}>Revision →</span>
+            <span>🔁 আজকের Revision ({bn(revDue.length)})</span>
+            <span style={link} onClick={() => onGoto({ rv: "planner", view: "revision" })}>সব →</span>
           </div>
+          {revDue.length === 0 && <div style={{ fontSize: 12, color: "#34D399" }}>আজকের Revision শেষ বা এখনো কিছু জমেনি ✅</div>}
           {revDue.slice(0, 5).map(o => (
-            <div key={o.occ} onClick={() => onGoto({ rv: "planner", view: "daily", date: o.ds })}
-              style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid #1E293B", cursor: "pointer" }}>
+            <div key={o.occ} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid #1E293B" }}>
               <div style={{ width: 4, alignSelf: "stretch", borderRadius: 3, background: colorOf(o.subjKey) }} />
-              <div style={{ flex: 1 }}>
+              <div onClick={() => onGoto({ rv: "planner", view: "daily", date: o.ds })} style={{ flex: 1, cursor: "pointer" }}>
                 <div style={{ fontSize: 12.5, fontWeight: o.instruction.trim() ? 900 : 700, color: o.instruction.trim() ? "#FCD34D" : "#E2E8F0" }}>{o.subject}</div>
-                <div style={{ fontSize: 10.5, color: "#64748B" }}>{toDate(o.ds).toLocaleDateString("bn-BD", { weekday: "short", day: "numeric", month: "short" })} · {o.time}</div>
+                <div style={{ fontSize: 10.5, color: "#64748B" }}>
+                  {STAGE_BN[o.stage]} Revision · ক্লাস {toDate(o.ds).toLocaleDateString("bn-BD", { weekday: "short", day: "numeric", month: "short" })}
+                  {o.late > 0 && <span style={{ color: "#F87171" }}> · {bn(o.late)} দিন দেরি</span>}
+                </div>
               </div>
-              <div style={{ fontSize: 10, color: "#64748B" }}>{o.pdfs.length > 0 && `📄 ${bn(o.pdfs.length)}`}</div>
+              {o.pdfs.length > 0 && <div style={{ fontSize: 10, color: "#64748B" }}>📄 {bn(o.pdfs.length)}</div>}
+              <span onClick={() => doneRev(o)} style={chip(false, "#34D399")}>✓ হয়েছে</span>
             </div>
           ))}
           {revDue.length > 5 && <div style={{ fontSize: 11, color: "#475569", paddingTop: 6 }}>আরও {bn(revDue.length - 5)}টা বাকি…</div>}

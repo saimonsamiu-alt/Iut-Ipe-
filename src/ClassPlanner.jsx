@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { hasConfigUrl, getCfg, setCfg, currentUser, connect as cloudConnect, signOut,
          uploadPdf, downloadPdf, deleteRemotePdf } from "./cloud.js";
+import { INTERVALS, STAGE_BN, revisionItems, markDone, markSkip, setStart } from "./revision.js";
 import { SCHED_KEY, META_KEY, TS_KEY, PEND_KEY, loadLS, saveLS, getAllPdfs, putPdf, delPdf,
          touchLocal, pushLocal, syncEverything } from "./store.js";
 
@@ -62,7 +63,7 @@ export default function ClassPlanner({ courses = [], routine = {}, initialView =
   const [view, setView] = useState(initialView || "daily");
   const [date, setDate] = useState(initialDate || todayStr());
   const [monthOff, setMonthOff] = useState(0);
-  const [revMode, setRevMode] = useState("date");
+  const [revMode, setRevMode] = useState("due");
   const [revRange, setRevRange] = useState(30);
   const [onlyNotes, setOnlyNotes] = useState(true);
   const [viewer, setViewer] = useState(null);
@@ -246,6 +247,13 @@ export default function ClassPlanner({ courses = [], routine = {}, initialView =
   });
   const lead = new Date(yr, mo, 1).getDay();
 
+  /* ── স্বয়ংক্রিয় Revision (১, ৩, ৭, ১৪ দিন) ── */
+  const bn = n => String(n).replace(/\d/g, d => "০১২৩৪৫৬৭৮৯"[d]);
+  const rev = revisionItems(sched, meta, todayStr(), pdfs);
+  const revDone = o => saveMeta(markDone(meta, o.occ, todayStr()));
+  const revSkip = o => saveMeta(markSkip(meta, o.occ));
+  const changeStart = ds => ds && saveMeta(setStart(meta, ds));
+
   /* ── derived: revision ── */
   const pastDates = Array.from({ length: revRange }, (_, i) => addDays(todayStr(), -i));
   const revOccs = pastDates.flatMap(occOn).filter(o => !onlyNotes || o.pdfs.length || o.instruction.trim());
@@ -390,15 +398,72 @@ export default function ClassPlanner({ courses = [], routine = {}, initialView =
       {view === "revision" && sched.length > 0 && (
         <div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
+            <button onClick={() => setRevMode("due")} style={btn(revMode === "due", "#F59E0B")}>⏰ আজকের ({bn(rev.due.length)})</button>
             <button onClick={() => setRevMode("date")} style={btn(revMode === "date", "#A78BFA")}>Date-wise</button>
             <button onClick={() => setRevMode("subject")} style={btn(revMode === "subject", "#A78BFA")}>Subject-wise</button>
           </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 14, alignItems: "center" }}>
+          {revMode !== "due" && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "center", marginBottom: 14, alignItems: "center" }}>
             {[14, 30, 60, 120].map(n => <button key={n} onClick={() => setRevRange(n)} style={btn(revRange === n)}>{n} দিন</button>)}
             <button onClick={() => setOnlyNotes(v => !v)} style={btn(onlyNotes, "#34D399")}>{onlyNotes ? "✓ শুধু note/instruction আছে" : "সব class"}</button>
-          </div>
+          </div>}
 
-          {revOccs.length === 0 && <div style={{ textAlign: "center", color: "#334155", fontSize: 12, padding: "28px 0" }}>Revision-এর মতো কিছু নেই।</div>}
+          {revMode !== "due" && revOccs.length === 0 && <div style={{ textAlign: "center", color: "#334155", fontSize: 12, padding: "28px 0" }}>Revision-এর মতো কিছু নেই।</div>}
+
+          {revMode === "due" && (
+            <div>
+              <div style={{ fontSize: 11, color: "#64748B", textAlign: "center", lineHeight: 1.6, marginBottom: 12 }}>
+                প্রতিটি ক্লাসের <b style={{ color: "#F59E0B" }}>{INTERVALS.map(bn).join(", ")} দিন পর</b> নিজে থেকে Revision আসবে।<br />
+                Revise করে <b>✓</b> চাপুন, পরের ধাপ নিজেই সাজানো হবে।
+              </div>
+
+              {rev.due.length === 0 && (
+                <div style={{ ...card, textAlign: "center", color: "#34D399", fontSize: 13, fontWeight: 700 }}>🎉 আজকের Revision শেষ! (বা এখনো কিছু জমেনি)</div>
+              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {rev.due.map(o => (
+                  <div key={o.occ} style={{ ...card, borderLeft: `3px solid ${colorOf(o.subjKey)}`, background: o.instruction.trim() ? "#1C1304" : "#0F172A" }}>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 5 }}>
+                      <span style={{ fontSize: 12, fontWeight: 900, color: colorOf(o.subjKey) }}>{o.subject}</span>
+                      <span style={{ fontSize: 10.5, color: "#94A3B8" }}>{niceDate(o.ds)} · {o.time}</span>
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#F59E0B", background: "#F59E0B22", padding: "2px 8px", borderRadius: 6 }}>{STAGE_BN[o.stage]} Revision</span>
+                      <span style={{ fontSize: 10, color: o.late > 0 ? "#F87171" : "#34D399", fontWeight: 700 }}>{o.late > 0 ? `${bn(o.late)} দিন দেরি` : "আজ"}</span>
+                    </div>
+                    {o.instruction.trim() && <div style={{ fontSize: 13.5, fontWeight: 900, color: "#FCD34D", marginBottom: 6 }}>📌 {o.instruction}</div>}
+                    {o.pdfs.length > 0 && (
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 }}>
+                        {o.pdfs.map(p => <span key={p.id} onClick={() => openPdf(p)} style={{ ...btn(false), color: "#38BDF8" }}>{p.blob ? "📄" : "☁️"} {p.name.length > 22 ? p.name.slice(0, 20) + "…" : p.name}</span>)}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      <button onClick={() => revDone(o)} style={btn(true, "#34D399")}>✓ Revise হয়েছে</button>
+                      <button onClick={() => { setDate(o.ds); setView("daily"); }} style={btn(false)}>ক্লাস খুলুন</button>
+                      <div style={{ flex: 1 }} />
+                      <button onClick={() => window.confirm("এই ক্লাসের বাকি Revision বাদ দেবেন?") && revSkip(o)} style={btn(false, "#64748B")}>⏭ বাদ</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {rev.upcoming.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1.5, color: "#64748B", marginBottom: 6 }}>আগামী ৭ দিনে আসছে</div>
+                  {rev.upcoming.map(o => (
+                    <div key={o.occ} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0", borderTop: "1px solid #1E293B", fontSize: 11.5, color: "#94A3B8" }}>
+                      <span style={{ width: 70, color: "#64748B" }}>{niceDate(o.due)}</span>
+                      <span style={{ flex: 1, fontWeight: 700, color: colorOf(o.subjKey) }}>{o.subject}</span>
+                      <span>{STAGE_BN[o.stage]} · ক্লাস {niceDate(o.ds)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ ...card, marginTop: 16, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, color: "#94A3B8" }}>Revision গোনা শুরু:</span>
+                <input type="date" value={rev.start} onChange={e => changeStart(e.target.value)} style={{ ...inp, width: "auto", padding: "6px 10px", fontSize: 12 }} />
+                <span style={{ fontSize: 10, color: "#475569", flex: 1, minWidth: 150 }}>এর আগের ক্লাসের Revision আসবে না। পুরনো ক্লাসও ধরতে চাইলে তারিখ আগে নিন (সর্বোচ্চ ২১ দিন পিছনের ক্লাস আসে)।</span>
+              </div>
+            </div>
+          )}
 
           {revMode === "date" && pastDates.map(ds => {
             const list = revOccs.filter(o => o.ds === ds);

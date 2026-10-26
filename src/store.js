@@ -1,4 +1,4 @@
-import { pullState, pushState, listRemotePdfs, uploadPdf, deleteRemotePdf } from "./cloud.js";
+import { currentUser, pullState, pushState, listRemotePdfs, uploadPdf, deleteRemotePdf } from "./cloud.js";
 
 /* সব local data + cloud sync এক জায়গায় (Classes & Notes, ভুল-খাতা — দুটোই এটা ব্যবহার করে) */
 export const SCHED_KEY = "iut-sched-v1";      // class routine
@@ -35,6 +35,13 @@ export const touchLocal = () => saveLS(TS_KEY, Date.now());
 export const pushLocal = u => pushState(u, {
   schedule: loadLS(SCHED_KEY, []), meta: loadLS(META_KEY, {}), book: loadLS(BOOK_KEY, []), ts: loadLS(TS_KEY, 0),
 });
+
+/* যে পাতায় নিজের push নেই (যেমন "আজ"), সেখান থেকে বদল হলে cloud-এ পাঠাই */
+let _pushTimer;
+export const schedulePush = () => {
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(async () => { try { const u = await currentUser(); if (u) await pushLocal(u); } catch {} }, 1200);
+};
 
 /* একটা file cloud-এ তুলি (ব্যর্থ হলে পরে sync-এ আবার চেষ্টা হবে) */
 export async function uploadFile(u, rec) {
