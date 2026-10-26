@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { SCHED_KEY, META_KEY, getAllPdfs, sortKey } from "./ClassPlanner.jsx";
+import { sortKey } from "./ClassPlanner.jsx";
+import { SCHED_KEY, META_KEY, BOOK_KEY, getAllPdfs } from "./store.js";
 
 /* ── ছোট helper ── */
 const loadLS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -94,6 +95,10 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
   const revDue = Array.from({ length: 7 }, (_, i) => addDays(today, -i - 1))
     .flatMap(occOn)
     .filter(o => !o.revised && (o.pdfs.length || o.instruction.trim()));
+
+  /* ── ভুল-খাতা: খোলা Doubt / ভুল ── */
+  const openBook = loadLS(BOOK_KEY, []).filter(e => !e.resolved)
+    .sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0) || String(b.date).localeCompare(String(a.date)));
 
   /* ── styles ── */
   const card = { background: "#0F172A", border: "1px solid #1E293B", borderRadius: 14, padding: "14px 15px", marginBottom: 12 };
@@ -265,6 +270,25 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
             </div>
           ))}
           {revDue.length > 5 && <div style={{ fontSize: 11, color: "#475569", paddingTop: 6 }}>আরও {bn(revDue.length - 5)}টা বাকি…</div>}
+        </div>
+      )}
+
+      {/* খোলা Doubt / ভুল */}
+      {openBook.length > 0 && (
+        <div style={{ ...card, borderColor: "#F8717155" }}>
+          <div style={h}>
+            <span>📓 খোলা Doubt / ভুল ({bn(openBook.length)})</span>
+            <span style={link} onClick={() => onGoto({ tab: "book" })}>ভুল-খাতা →</span>
+          </div>
+          {openBook.slice(0, 3).map(e => (
+            <div key={e.id} onClick={() => onGoto({ tab: "book" })} style={{ display: "flex", gap: 8, alignItems: "center", padding: "7px 0", borderTop: "1px solid #1E293B", cursor: "pointer" }}>
+              <div style={{ width: 4, alignSelf: "stretch", borderRadius: 3, background: colorOf(e.courseId) }} />
+              <div style={{ flex: 1, fontSize: 12.5, color: "#E2E8F0", lineHeight: 1.4 }}>
+                {e.star && "⭐ "}{e.type === "doubt" ? "❓" : "❌"} {String(e.text || "(ছবি)").slice(0, 70)}
+              </div>
+              <div style={{ fontSize: 10, color: "#64748B" }}>{courseCode(e.courseId)}</div>
+            </div>
+          ))}
         </div>
       )}
 

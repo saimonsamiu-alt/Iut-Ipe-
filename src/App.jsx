@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import ClassPlanner from "./ClassPlanner.jsx";
 import TodayHub from "./TodayHub.jsx";
+import MistakeBook from "./MistakeBook.jsx";
 
 const YOUR_NAME     = "samiu";
 const YOUR_PASSWORD = "iut2025";
@@ -1053,7 +1054,7 @@ export default function App(){
   const [open,setOpen]       = useState({});
   const [tab,setTab]         = useState("today");
   const [nav,setNav]         = useState({});
-  const goTo=(n)=>{ setNav(n); setTab(n.rv?"routine":"today"); window.scrollTo(0,0); };
+  const goTo=(n)=>{ setNav(n); setTab(n.tab||(n.rv?"routine":"today")); window.scrollTo(0,0); };
   const [mode,setMode]       = useState(()=>loadLS(MODE_KEY,"pre"));
   const [confirmReset,setCR] = useState(false);
   const [flash,setFlash]     = useState(false);
@@ -1116,7 +1117,7 @@ export default function App(){
           );})}
         </div>
         <div style={{display:"flex",justifyContent:"center",flexWrap:"wrap",gap:3}}>
-          {[["today","☀️ আজ"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
+          {[["today","☀️ আজ"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["book","📓 ভুল-খাতা"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
             <button key={key} onClick={()=>{setNav({});setTab(key);}} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===arr.length-1?"0 6px 6px 0":"0"}}>
               {lbl}
             </button>
@@ -1273,6 +1274,9 @@ export default function App(){
 
       {/* ROUTINE */}
       {tab==="routine" && <RoutineTab key={JSON.stringify(nav)} nav={nav} mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
+
+      {/* ভুল-খাতা / Doubt */}
+      {tab==="book" && <MistakeBook courses={COURSES}/>}
 
       {/* PUNISHMENT BOOK */}
       {tab==="punish" && (

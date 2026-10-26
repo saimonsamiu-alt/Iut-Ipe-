@@ -30,7 +30,7 @@ export async function connect() { await call("ping"); return SHEET_USER; }
 export async function signOut() { const c = getCfg(); setCfg({ url: c.url, secret: "" }); }
 
 export async function pullState() { return (await call("get_state")).state || null; }
-export async function pushState(_u, { schedule, meta, ts }) { await call("put_state", { state: { schedule, meta, ts } }); }
+export async function pushState(_u, state) { await call("put_state", { state }); }
 
 export async function listRemotePdfs() { return (await call("list_pdfs")).rows || []; }
 
