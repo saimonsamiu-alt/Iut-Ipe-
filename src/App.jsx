@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import ClassPlanner from "./ClassPlanner.jsx";
 
 const YOUR_NAME     = "samiu";
 const YOUR_PASSWORD = "iut2025";
@@ -332,7 +333,7 @@ function RoutineTab({mode,setMode}){
 
       {/* Sub-tabs */}
       <div style={{display:"flex",justifyContent:"center",gap:3,marginBottom:16,flexWrap:"wrap"}}>
-        {[["today","Today"],["week","Week"],["month","Month"],["year","Year"],["classlog","Class Log 📚"]].map(([key,lbl])=>(
+        {[["today","Today"],["week","Week"],["month","Month"],["year","Year"],["classlog","Class Log 📚"],["planner","Classes & Notes 🗂"]].map(([key,lbl])=>(
           <button key={key} onClick={()=>setRv(key)}
             style={{padding:"7px 13px",fontSize:11,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",borderRadius:7,background:rv===key?(key==="classlog"?"#1E3A5F":"#1E40AF"):"#0F172A",color:rv===key?"#fff":"#64748B"}}>
             {lbl}{key==="classlog"&&pendingHome.length>0&&<span style={{background:"#F97316",color:"#fff",borderRadius:100,padding:"0 5px",fontSize:9,marginLeft:5,fontWeight:900}}>{pendingHome.length}</span>}
@@ -534,6 +535,7 @@ function RoutineTab({mode,setMode}){
 
       {/* CLASS LOG */}
       {rv==="classlog" && <ClassLog/>}
+      {rv==="planner" && <ClassPlanner courses={COURSES} routine={ROUTINE}/>}
     </div>
   );
 }
