@@ -553,9 +553,9 @@ function useNotifications(mode){
     try{
       const vibratePattern=[200,100,200,100,200];
       if(navigator.serviceWorker && navigator.serviceWorker.controller){
-        navigator.serviceWorker.ready.then(reg=>reg.showNotification(title,{body,icon:"/icon-192.png",badge:"/icon-192.png",vibrate:vibratePattern,requireInteraction:false}));
+        navigator.serviceWorker.ready.then(reg=>reg.showNotification(title,{body,icon:"./icon-192.png",badge:"./icon-192.png",vibrate:vibratePattern,requireInteraction:false}));
       } else {
-        const n=new Notification(title,{body,icon:"/icon-192.png"});
+        const n=new Notification(title,{body,icon:"./icon-192.png"});
         if(navigator.vibrate) navigator.vibrate(vibratePattern);
       }
     }catch{}
