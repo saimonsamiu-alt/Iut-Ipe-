@@ -3,6 +3,7 @@ import ClassPlanner from "./ClassPlanner.jsx";
 import TodayHub from "./TodayHub.jsx";
 import MistakeBook from "./MistakeBook.jsx";
 import ExamTab from "./ExamTab.jsx";
+import ProgressTab from "./ProgressTab.jsx";
 
 const YOUR_NAME     = "samiu";
 const YOUR_PASSWORD = "iut2025";
@@ -1118,7 +1119,7 @@ export default function App(){
           );})}
         </div>
         <div style={{display:"flex",justifyContent:"center",flexWrap:"wrap",gap:3}}>
-          {[["today","☀️ আজ"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["exam","🎯 পরীক্ষা"],["book","📓 ভুল-খাতা"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
+          {[["today","☀️ আজ"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["exam","🎯 পরীক্ষা"],["book","📓 ভুল-খাতা"],["progress","📊 অগ্রগতি"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
             <button key={key} onClick={()=>{setNav({});setTab(key);}} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===arr.length-1?"0 6px 6px 0":"0"}}>
               {lbl}
             </button>
@@ -1137,7 +1138,7 @@ export default function App(){
       </div>
 
       {/* আজ */}
-      {tab==="today" && <TodayHub done={done} mode={mode} routine={ROUTINE} courses={COURSES} rtn={{load:loadRtn,save:saveRtn}} classLogKey={CLASSLOG_KEY} onGoto={goTo}/>}
+      {tab==="today" && <TodayHub wasStudied={wasStudied} done={done} mode={mode} routine={ROUTINE} courses={COURSES} rtn={{load:loadRtn,save:saveRtn}} classLogKey={CLASSLOG_KEY} onGoto={goTo}/>}
 
       {/* COURSES */}
       {tab==="courses" && (
@@ -1275,6 +1276,9 @@ export default function App(){
 
       {/* ROUTINE */}
       {tab==="routine" && <RoutineTab key={JSON.stringify(nav)} nav={nav} mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
+
+      {/* অগ্রগতি */}
+      {tab==="progress" && <ProgressTab courses={COURSES} done={done} routine={ROUTINE} mode={mode} loadRtn={loadRtn} wasStudied={wasStudied}/>}
 
       {/* পরীক্ষা */}
       {tab==="exam" && <ExamTab courses={COURSES} done={done} toggleTopic={toggleTopic}/>}

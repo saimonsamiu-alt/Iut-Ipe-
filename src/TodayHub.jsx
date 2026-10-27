@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { sortKey } from "./ClassPlanner.jsx";
 import { SCHED_KEY, META_KEY, BOOK_KEY, EXAM_KEY, getAllPdfs, saveLS, touchLocal, schedulePush } from "./store.js";
 import { examStats, upcoming } from "./exams.js";
+import { streaks } from "./progress.js";
 import { revisionItems, markDone, STAGE_BN } from "./revision.js";
 
 /* ── ছোট helper ── */
@@ -29,7 +30,7 @@ const gap = m => {
   return h > 0 ? `${bn(h)} ঘণ্টা${mm ? " " + bn(mm) + " মিনিট" : ""}` : `${bn(mm)} মিনিট`;
 };
 
-export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onGoto, done: topicDone = {} }) {
+export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onGoto, done: topicDone = {}, wasStudied }) {
   const [, force] = useState(0);
   const [pdfs, setPdfs] = useState([]);
   const [now, setNow] = useState(new Date());
@@ -108,6 +109,8 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
     .filter(x => x.st.daysLeft <= 45).slice(0, 2);
   const examColor = { ok: "#34D399", push: "#F59E0B", hard: "#F87171", late: "#F87171" };
 
+  const streak = wasStudied ? streaks(wasStudied, today) : null;
+
   /* ── styles ── */
   const card = { background: "#0F172A", border: "1px solid #1E293B", borderRadius: 14, padding: "14px 15px", marginBottom: 12 };
   const h = { fontSize: 11, fontWeight: 800, letterSpacing: 1.5, color: "#64748B", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" };
@@ -121,9 +124,17 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
   return (
     <div style={{ maxWidth: 680, margin: "0 auto", padding: "18px 14px" }}>
       {/* শিরোনাম */}
-      <div style={{ marginBottom: 14 }}>
-        <div style={{ fontSize: 12, color: "#38BDF8", fontWeight: 700 }}>{greet}</div>
-        <div style={{ fontSize: 20, fontWeight: 900, color: "#F8FAFC" }}>{dateText}</div>
+      <div style={{ marginBottom: 14, display: "flex", alignItems: "flex-start", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, color: "#38BDF8", fontWeight: 700 }}>{greet}</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#F8FAFC" }}>{dateText}</div>
+        </div>
+        {streak && (
+          <div onClick={() => onGoto({ tab: "progress" })} style={{ cursor: "pointer", textAlign: "center", padding: "6px 12px", borderRadius: 12, border: `1px solid ${streak.current ? "#F59E0B66" : "#1E293B"}`, background: streak.current ? "#F59E0B14" : "#0F172A" }}>
+            <div style={{ fontSize: 17, fontWeight: 900, color: streak.current ? "#FBBF24" : "#475569", lineHeight: 1.1 }}>{streak.current ? "🔥" : "🌱"} {bn(streak.current)}</div>
+            <div style={{ fontSize: 9, color: streak.todayDone ? "#34D399" : "#64748B" }}>{streak.todayDone ? "দিন · আজ ✓" : "দিন streak"}</div>
+          </div>
+        )}
       </div>
 
       {/* সারসংক্ষেপ */}
