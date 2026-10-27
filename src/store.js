@@ -4,6 +4,7 @@ import { currentUser, pullState, pushState, listRemotePdfs, uploadPdf, deleteRem
 export const SCHED_KEY = "iut-sched-v1";      // class routine
 export const META_KEY  = "iut-class-meta-v1"; // per-class instruction + revised tick
 export const BOOK_KEY  = "iut-book-v1";       // ভুল-খাতা / Doubt
+export const EXAM_KEY  = "iut-exams-v1";      // পরীক্ষার তালিকা
 export const TS_KEY    = "iut-sync-ts-v1";    // সর্বশেষ local edit (last-write-wins)
 export const PEND_KEY  = "iut-pending-del-v1";// offline-এ মুছে ফেলা file, cloud থেকে মোছা বাকি
 
@@ -33,7 +34,7 @@ export const delPdf = id => idb("readwrite", s => s.delete(id));
 export const touchLocal = () => saveLS(TS_KEY, Date.now());
 
 export const pushLocal = u => pushState(u, {
-  schedule: loadLS(SCHED_KEY, []), meta: loadLS(META_KEY, {}), book: loadLS(BOOK_KEY, []), ts: loadLS(TS_KEY, 0),
+  schedule: loadLS(SCHED_KEY, []), meta: loadLS(META_KEY, {}), book: loadLS(BOOK_KEY, []), exams: loadLS(EXAM_KEY, []), ts: loadLS(TS_KEY, 0),
 });
 
 /* যে পাতায় নিজের push নেই (যেমন "আজ"), সেখান থেকে বদল হলে cloud-এ পাঠাই */
@@ -72,10 +73,12 @@ export async function syncEverything(u) {
     saveLS(SCHED_KEY, remote.schedule || []);
     saveLS(META_KEY, remote.meta || {});
     if (remote.book !== undefined) saveLS(BOOK_KEY, remote.book);
+    if (remote.exams !== undefined) saveLS(EXAM_KEY, remote.exams);
     saveLS(TS_KEY, remote.ts);
     pulled = true;
-    if (remote.book === undefined && loadLS(BOOK_KEY, []).length) await pushLocal(u); // পুরনো ভার্সনের state-এ book ছিল না
-  } else if (localTs > 0 || loadLS(SCHED_KEY, []).length || loadLS(BOOK_KEY, []).length) {
+    // পুরনো ভার্সনের state-এ book/exams ছিল না — আমাদের local data হারাতে দেব না
+    if ((remote.book === undefined && loadLS(BOOK_KEY, []).length) || (remote.exams === undefined && loadLS(EXAM_KEY, []).length)) await pushLocal(u);
+  } else if (localTs > 0 || loadLS(SCHED_KEY, []).length || loadLS(BOOK_KEY, []).length || loadLS(EXAM_KEY, []).length) {
     const ts = localTs || Date.now(); saveLS(TS_KEY, ts);
     await pushLocal(u);
   }

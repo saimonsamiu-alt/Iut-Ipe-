@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { sortKey } from "./ClassPlanner.jsx";
-import { SCHED_KEY, META_KEY, BOOK_KEY, getAllPdfs, saveLS, touchLocal, schedulePush } from "./store.js";
+import { SCHED_KEY, META_KEY, BOOK_KEY, EXAM_KEY, getAllPdfs, saveLS, touchLocal, schedulePush } from "./store.js";
+import { examStats, upcoming } from "./exams.js";
 import { revisionItems, markDone, STAGE_BN } from "./revision.js";
 
 /* ── ছোট helper ── */
@@ -28,7 +29,7 @@ const gap = m => {
   return h > 0 ? `${bn(h)} ঘণ্টা${mm ? " " + bn(mm) + " মিনিট" : ""}` : `${bn(mm)} মিনিট`;
 };
 
-export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onGoto }) {
+export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onGoto, done: topicDone = {} }) {
   const [, force] = useState(0);
   const [pdfs, setPdfs] = useState([]);
   const [now, setNow] = useState(new Date());
@@ -101,6 +102,12 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
   const openBook = loadLS(BOOK_KEY, []).filter(e => !e.resolved)
     .sort((a, b) => (b.star ? 1 : 0) - (a.star ? 1 : 0) || String(b.date).localeCompare(String(a.date)));
 
+  /* ── আসন্ন পরীক্ষা (৪৫ দিনের মধ্যে, সর্বোচ্চ ২টা) ── */
+  const soonExams = upcoming(loadLS(EXAM_KEY, []), today)
+    .map(ex => ({ ex, st: examStats(ex, courses, topicDone, today) }))
+    .filter(x => x.st.daysLeft <= 45).slice(0, 2);
+  const examColor = { ok: "#34D399", push: "#F59E0B", hard: "#F87171", late: "#F87171" };
+
   /* ── styles ── */
   const card = { background: "#0F172A", border: "1px solid #1E293B", borderRadius: 14, padding: "14px 15px", marginBottom: 12 };
   const h = { fontSize: 11, fontWeight: 800, letterSpacing: 1.5, color: "#64748B", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" };
@@ -133,6 +140,34 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
           </div>
         ))}
       </div>
+
+      {/* আসন্ন পরীক্ষা */}
+      {soonExams.length > 0 && (
+        <div style={{ ...card, borderColor: "#A78BFA55" }}>
+          <div style={h}>
+            <span>🎯 আসন্ন পরীক্ষা</span>
+            <span style={link} onClick={() => onGoto({ tab: "exam" })}>সব →</span>
+          </div>
+          {soonExams.map(({ ex, st }) => (
+            <div key={ex.id} onClick={() => onGoto({ tab: "exam" })} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: "1px solid #1E293B", cursor: "pointer" }}>
+              <div style={{ textAlign: "center", minWidth: 52 }}>
+                <div style={{ fontSize: st.daysLeft === 0 ? 14 : 22, fontWeight: 900, color: st.daysLeft <= 3 ? "#F87171" : st.daysLeft <= 7 ? "#F59E0B" : "#38BDF8", lineHeight: 1 }}>{st.daysLeft === 0 ? "আজ!" : bn(st.daysLeft)}</div>
+                {st.daysLeft > 0 && <div style={{ fontSize: 9, color: "#64748B" }}>দিন বাকি</div>}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: colorOf(ex.courseId) }}>{st.course.code} <span style={{ color: "#E2E8F0" }}>· {ex.type}</span></div>
+                <div style={{ fontSize: 10.5, color: "#64748B", marginTop: 2 }}>
+                  কভারেজ {bn(st.pct)}%
+                  {st.remaining.length > 0 && st.daysLeft >= 1 && <span style={{ color: examColor[st.level], fontWeight: 700 }}> · দিনে ~{bn((Math.round(st.pace * 10) / 10).toString())}টা টপিক</span>}
+                </div>
+                <div style={{ height: 4, background: "#1E293B", borderRadius: 3, marginTop: 4, overflow: "hidden" }}>
+                  <div style={{ width: `${st.pct}%`, height: "100%", background: colorOf(ex.courseId) }} />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* এখন / পরের ক্লাস */}
       {(running || next) && (
