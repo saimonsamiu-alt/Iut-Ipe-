@@ -90,6 +90,7 @@ export default function TodayHub({ mode, routine, courses, rtn, classLogKey, onG
   const toggleLog = (id, field) => {
     const upd = logs.map(l => l.id === id ? { ...l, [field]: !l[field] } : l);
     try { localStorage.setItem(classLogKey, JSON.stringify(upd)); } catch {}
+    schedulePush();
     force(n => n + 1);
   };
   const courseCode = id => (courses.find(c => c.id === id) || {}).code || id;

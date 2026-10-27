@@ -4,6 +4,8 @@ import TodayHub from "./TodayHub.jsx";
 import MistakeBook from "./MistakeBook.jsx";
 import ExamTab from "./ExamTab.jsx";
 import ProgressTab from "./ProgressTab.jsx";
+import { currentUser } from "./cloud.js";
+import { syncEverything, schedulePush } from "./store.js";
 
 const YOUR_NAME     = "samiu";
 const YOUR_PASSWORD = "iut2025";
@@ -77,7 +79,7 @@ const ROUTINE={
 
 const getRtnKey  = (d) => `rtn-${d}`;
 const loadRtn    = (d) => loadLS(getRtnKey(d), {done:[]});
-const saveRtn    = (d, data) => saveLS(getRtnKey(d), data);
+const saveRtn    = (d, data) => { saveLS(getRtnKey(d), data); schedulePush(); };
 const getPct     = (done, total) => total===0 ? 0 : Math.round((done.filter(Boolean).length/total)*100);
 const pctColor   = (p) => p>=80 ? "#34D399" : p>=50 ? "#FBBF24" : p>=20 ? "#F97316" : "#475569";
 const courseMap  = Object.fromEntries(COURSES.map(c=>[c.id,c]));
@@ -140,7 +142,7 @@ function ClassLog(){
   const [adding,setAdding] = useState(false);
   const [filter,setFilter] = useState("all");
 
-  const saveLogs=(l)=>{ setLogs(l); saveLS(CLASSLOG_KEY,l); };
+  const saveLogs=(l)=>{ setLogs(l); saveLS(CLASSLOG_KEY,l); schedulePush(); };
   const addLog=()=>{
     if(!form.topic.trim()) return;
     saveLogs([{id:Date.now(),...form,home:false,next:false},...logs]);
@@ -248,7 +250,7 @@ function ClassLog(){
 }
 
 /* ─── ROUTINE TAB ───────────────────────────── */
-function RoutineTab({mode,setMode,nav={}}){
+function RoutineTab({mode,setMode,nav={},syncRev=0}){
   const [rv,setRv]         = useState(nav.rv||"today");
   const [selDay,setSelDay] = useState(todayName());
   const [dayData,setDayData]= useState({});
@@ -258,7 +260,7 @@ function RoutineTab({mode,setMode,nav={}}){
 
   const tasks = ROUTINE[mode][selDay] || [];
 
-  useEffect(()=>{ setDayData(loadRtn(todayStr())); setLogs(loadLS(CLASSLOG_KEY,[])); },[selDay,rv]);
+  useEffect(()=>{ setDayData(loadRtn(todayStr())); setLogs(loadLS(CLASSLOG_KEY,[])); },[selDay,rv,syncRev]);
 
   const toggleTask=(i)=>{
     const cur=loadRtn(todayStr()), done=[...(cur.done||[])];
@@ -269,7 +271,7 @@ function RoutineTab({mode,setMode,nav={}}){
 
   const toggleLogField=(id,field)=>{
     const updated=logs.map(l=>l.id===id?{...l,[field]:!l[field]}:l);
-    setLogs(updated); saveLS(CLASSLOG_KEY,updated); fu(n=>n+1);
+    setLogs(updated); saveLS(CLASSLOG_KEY,updated); schedulePush(); fu(n=>n+1);
   };
 
   // Pending class reviews (not studied at home yet)
@@ -1056,6 +1058,7 @@ export default function App(){
   const [open,setOpen]       = useState({});
   const [tab,setTab]         = useState("today");
   const [nav,setNav]         = useState({});
+  const [syncRev,setSyncRev] = useState(0);
   const goTo=(n)=>{ setNav(n); setTab(n.tab||(n.rv?"routine":"today")); window.scrollTo(0,0); };
   const [mode,setMode]       = useState(()=>loadLS(MODE_KEY,"pre"));
   const [confirmReset,setCR] = useState(false);
@@ -1072,10 +1075,30 @@ export default function App(){
     const id=setInterval(check,15000); // reflect routine tab ticks live
     return ()=>clearInterval(id);
   },[authed,tab]);
-  useEffect(()=>{ saveLS(MODE_KEY,mode); },[mode]);
+  useEffect(()=>{ saveLS(MODE_KEY,mode); if(authed) schedulePush(); },[mode]);
+
+  // ☁️ ক্লাউড sync: খুললে একবার (PDF সহ), এরপর ফিরে এলে/net এলে/প্রতি ৯০ সেকেন্ডে হালকা sync (টিক, লগ, মোড)
   useEffect(()=>{
     if(!authed) return;
-    saveLS(COURSE_KEY,done);
+    let busy=false;
+    const run=async(files)=>{
+      if(busy) return; busy=true;
+      try{ const u=await currentUser(); if(u) await syncEverything(u,{files}); }catch{}
+      busy=false;
+    };
+    run(true);
+    const onApplied=()=>{ setDone(loadLS(COURSE_KEY,{})); setMode(loadLS(MODE_KEY,"pre")); setSyncRev(n=>n+1); };
+    const onVis=()=>{ if(document.visibilityState==="visible") run(false); };
+    const onOnline=()=>run(false);
+    window.addEventListener("iut-data-applied",onApplied);
+    document.addEventListener("visibilitychange",onVis);
+    window.addEventListener("online",onOnline);
+    const id=setInterval(()=>{ if(document.visibilityState==="visible") run(false); },90000);
+    return ()=>{ window.removeEventListener("iut-data-applied",onApplied); document.removeEventListener("visibilitychange",onVis); window.removeEventListener("online",onOnline); clearInterval(id); };
+  },[authed]);
+  useEffect(()=>{
+    if(!authed) return;
+    saveLS(COURSE_KEY,done); schedulePush();
     setFlash(true); const t=setTimeout(()=>setFlash(false),900); return()=>clearTimeout(t);
   },[done,authed]);
 
@@ -1138,7 +1161,7 @@ export default function App(){
       </div>
 
       {/* আজ */}
-      {tab==="today" && <TodayHub wasStudied={wasStudied} done={done} mode={mode} routine={ROUTINE} courses={COURSES} rtn={{load:loadRtn,save:saveRtn}} classLogKey={CLASSLOG_KEY} onGoto={goTo}/>}
+      {tab==="today" && <TodayHub key={syncRev} wasStudied={wasStudied} done={done} mode={mode} routine={ROUTINE} courses={COURSES} rtn={{load:loadRtn,save:saveRtn}} classLogKey={CLASSLOG_KEY} onGoto={goTo}/>}
 
       {/* COURSES */}
       {tab==="courses" && (
@@ -1275,10 +1298,10 @@ export default function App(){
       )}
 
       {/* ROUTINE */}
-      {tab==="routine" && <RoutineTab key={JSON.stringify(nav)} nav={nav} mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
+      {tab==="routine" && <RoutineTab key={JSON.stringify(nav)} nav={nav} syncRev={syncRev} mode={mode} setMode={(m)=>{setMode(m);saveLS(MODE_KEY,m);}}/>}
 
       {/* অগ্রগতি */}
-      {tab==="progress" && <ProgressTab courses={COURSES} done={done} routine={ROUTINE} mode={mode} loadRtn={loadRtn} wasStudied={wasStudied}/>}
+      {tab==="progress" && <ProgressTab key={syncRev} courses={COURSES} done={done} routine={ROUTINE} mode={mode} loadRtn={loadRtn} wasStudied={wasStudied}/>}
 
       {/* পরীক্ষা */}
       {tab==="exam" && <ExamTab courses={COURSES} done={done} toggleTopic={toggleTopic}/>}
