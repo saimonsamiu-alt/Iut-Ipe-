@@ -51,3 +51,8 @@ export async function downloadPdf(path) {
   return new Blob([bytes], { type: "application/pdf" });
 }
 export async function deleteRemotePdf(path, id) { await call("del_pdf", { id: id || path }); }
+
+/* ── AI (Apps Script → Gemini) ── */
+export async function aiIngest(id) { return (await call("ai_ingest", { id })).note; }
+export async function aiNotes() { return (await call("ai_notes")).notes || {}; }
+export async function aiPlan(context) { return (await call("ai_plan", { context })).plan; }

@@ -6,6 +6,7 @@ export const SCHED_KEY = "iut-sched-v1";      // class routine
 export const META_KEY  = "iut-class-meta-v1"; // per-class instruction + revised tick
 export const BOOK_KEY  = "iut-book-v1";       // ভুল-খাতা / Doubt
 export const EXAM_KEY  = "iut-exams-v1";      // পরীক্ষার তালিকা
+export const AI_KEY   = "iut-ai-v1";         // AI প্ল্যানার: টিচার/পরীক্ষার তথ্য, টিউশন রুটিন, আজকের প্ল্যান ও হিসাব
 export const TS_KEY    = "iut-sync-ts-v1";    // সর্বশেষ local edit (last-write-wins)
 export const PEND_KEY  = "iut-pending-del-v1";// offline-এ মুছে ফেলা file, cloud থেকে মোছা বাকি
 export const X_KEY     = "iut-sync-x-v1";     // টিক/লগের আইটেম-ভিত্তিক sync tracker
@@ -99,7 +100,7 @@ export function reconcileLocal(remoteX) {
 }
 
 const buildState = x => ({
-  schedule: loadLS(SCHED_KEY, []), meta: loadLS(META_KEY, {}), book: loadLS(BOOK_KEY, []), exams: loadLS(EXAM_KEY, []),
+  schedule: loadLS(SCHED_KEY, []), meta: loadLS(META_KEY, {}), book: loadLS(BOOK_KEY, []), exams: loadLS(EXAM_KEY, []), ai: loadLS(AI_KEY, {}),
   x, ts: loadLS(TS_KEY, 0),
 });
 /* push সবসময় আগে remote টেনে টিকগুলো মিলিয়ে নেয়, যাতে অন্য ডিভাইসের টিক মুছে না যায় */
@@ -151,6 +152,7 @@ export async function syncEverything(u, opts) {
     saveLS(META_KEY, remote.meta || {});
     if (remote.book !== undefined) saveLS(BOOK_KEY, remote.book);
     if (remote.exams !== undefined) saveLS(EXAM_KEY, remote.exams);
+    if (remote.ai !== undefined) saveLS(AI_KEY, remote.ai);
     saveLS(TS_KEY, remote.ts);
     pulled = true;
     // পুরনো ভার্সনের state-এ book/exams ছিল না — আমাদের local data হারাতে দেব না

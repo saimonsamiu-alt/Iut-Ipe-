@@ -4,6 +4,7 @@ import TodayHub from "./TodayHub.jsx";
 import MistakeBook from "./MistakeBook.jsx";
 import ExamTab from "./ExamTab.jsx";
 import ProgressTab from "./ProgressTab.jsx";
+import AIPlanner from "./AIPlanner.jsx";
 import { currentUser } from "./cloud.js";
 import { syncEverything, schedulePush } from "./store.js";
 
@@ -1142,7 +1143,7 @@ export default function App(){
           );})}
         </div>
         <div style={{display:"flex",justifyContent:"center",flexWrap:"wrap",gap:3}}>
-          {[["today","☀️ আজ"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["exam","🎯 পরীক্ষা"],["book","📓 ভুল-খাতা"],["progress","📊 অগ্রগতি"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
+          {[["today","☀️ আজ"],["ai","🤖 AI প্ল্যান"],["courses","Courses"],["order","Study Order"],["routine","Routine"],["exam","🎯 পরীক্ষা"],["book","📓 ভুল-খাতা"],["progress","📊 অগ্রগতি"],["punish","📕 Reading"]].map(([key,lbl],i,arr)=>(
             <button key={key} onClick={()=>{setNav({});setTab(key);}} style={{padding:"8px 16px",fontSize:12,fontWeight:700,cursor:"pointer",border:"1px solid #1E293B",background:tab===key?"#38BDF8":"#0B1120",color:tab===key?"#080D18":"#64748B",transition:"all 0.2s",borderRadius:i===0?"6px 0 0 6px":i===arr.length-1?"0 6px 6px 0":"0"}}>
               {lbl}
             </button>
@@ -1304,6 +1305,7 @@ export default function App(){
       {tab==="progress" && <ProgressTab key={syncRev} courses={COURSES} done={done} routine={ROUTINE} mode={mode} loadRtn={loadRtn} wasStudied={wasStudied}/>}
 
       {/* পরীক্ষা */}
+      {tab==="ai" && <AIPlanner key={syncRev} courses={COURSES} done={done}/>}
       {tab==="exam" && <ExamTab courses={COURSES} done={done} toggleTopic={toggleTopic}/>}
 
       {/* ভুল-খাতা / Doubt */}
