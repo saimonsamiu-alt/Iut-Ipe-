@@ -200,7 +200,7 @@ export default function ClassPlanner({ courses = [], routine = {}, initialView =
     const added = [];
     for (const f of files) {
       if (user && f.size > 15 * 1048576) setMsg("⚠️ " + f.name + " অনেক বড় (>15MB) — cloud upload ব্যর্থ হতে পারে।");
-      if (f.type !== "application/pdf" && !f.name.toLowerCase().endsWith(".pdf")) continue;
+      if (f.type !== "application/pdf" && !/^image\/(jpeg|png|webp|heic|heif)$/.test(f.type) && !f.name.toLowerCase().endsWith(".pdf")) continue;   // PDF বা ছবি
       const rec = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, occ: o.occ, ds: o.ds, subjKey: o.subjKey, name: f.name, size: f.size, blob: f };
       try { await putPdf(rec); added.push(rec); } catch { setMsg("PDF save হয়নি।"); }
     }
@@ -304,10 +304,10 @@ export default function ClassPlanner({ courses = [], routine = {}, initialView =
               <span onClick={() => removePdf(p)} style={{ cursor: "pointer", color: "#475569" }}>🗑</span>
             </div>
           ))}
-          <input ref={fileRef} type="file" accept="application/pdf,.pdf" multiple style={{ display: "none" }}
+          <input ref={fileRef} type="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp,image/heic" multiple style={{ display: "none" }}
             onChange={e => { upload(o, [...e.target.files]); e.target.value = ""; }} />
           <button onClick={() => fileRef.current.click()} style={{ ...btn(false), borderStyle: "dashed", color: "#38BDF8", textAlign: "center" }}>
-            + Handnote PDF {o.pdfs.length ? "আরও " : ""}add করুন
+            + Handnote PDF/ছবি {o.pdfs.length ? "আরও " : ""}add করুন
           </button>
         </div>
       </div>

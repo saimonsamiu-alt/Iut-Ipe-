@@ -45,21 +45,33 @@ export default function AIPlanner({ courses = [], done = {} }) {
   const recentClass = pdfs.filter(p => !String(p.occ || "").startsWith("LIB|") && p.ds >= addDays(today, -7));
   const fileKind = p => String(p.occ).split("|")[2];
 
+  const errText = e => (e && e.message) ? e.message : "নেট/Script URL/secret দেখুন";
+  const patchPdf = rec => setPdfs(l => l.map(x => x.id === rec.id ? { ...rec } : x));
+
   const uploadBatch = async fileList => {
-    const files = [...fileList].filter(f => f.type === "application/pdf" || f.name.toLowerCase().endsWith(".pdf"));
-    if (!files.length) { setMsg("শুধু PDF নেওয়া হয়। অন্য ফাইল PDF করে দিন।"); return; }
-    if (!user) { setMsg("আগে ক্লাউড (Google Sheet) কানেক্ট করুন — না হলে AI ফাইল পড়তে পারবে না।"); return; }
-    const added = [];
+    const files = [...fileList].filter(f => f.type === "application/pdf" || /^image\/(jpeg|png|webp|heic|heif)$/.test(f.type) || f.name.toLowerCase().endsWith(".pdf"));
+    if (!files.length) { setMsg("শুধু PDF বা ছবি (JPG/PNG) নেওয়া হয়। বাছা ফাইলগুলো এই ধরনের ছিল না।"); return; }
+    const problems = []; let saved = 0, sent = 0;
     for (let i = 0; i < files.length; i++) {
       const f = files[i];
       setBusy(`আপলোড ${bn(i + 1)}/${bn(files.length)}: ${f.name}`);
-      if (f.size > 14 * 1048576) { setMsg("⚠️ " + f.name + " অনেক বড় (>১৪MB), বাদ দিলাম।"); continue; }
+      if (f.size > 14 * 1048576) { problems.push(f.name + ": অনেক বড় (>১৪MB)"); continue; }
       const rec = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, occ: `LIB|${libCourse}|${libKind}`, ds: today, subjKey: libCourse, name: f.name, size: f.size, blob: f };
-      try { await putPdf(rec); await uploadFile(user, rec); added.push(rec); }
-      catch { setMsg("⚠️ " + f.name + " ক্লাউডে যায়নি (নেট/Script URL দেখুন)।"); }
+      try { await putPdf(rec); } catch (e) { problems.push(f.name + ": ডিভাইসে সেভ হয়নি — " + errText(e)); continue; }
+      saved++; setPdfs(l => [...l, rec]);              // সাথে সাথে লিস্টে দেখাই
+      if (!user) { problems.push(f.name + ": ক্লাউড কানেক্ট নেই, তাই শুধু এই ডিভাইসে আছে"); continue; }
+      try { await uploadFile(user, rec); patchPdf(rec); sent++; }
+      catch (e) { problems.push(f.name + ": ক্লাউডে যায়নি — " + errText(e)); }
     }
     setBusy("");
-    if (added.length) { setPdfs(p => [...p, ...added]); setMsg(`✅ ${bn(added.length)}টা ফাইল জমা হয়েছে। এবার "AI-কে পড়াও" চাপুন।`); }
+    setMsg((saved ? `✅ ${bn(saved)}টা ফাইল রাখা হয়েছে, ${bn(sent)}টা ক্লাউডে গেছে।` : "কোনো ফাইল রাখা যায়নি।") + (problems.length ? "\n⚠️ " + problems.join("\n⚠️ ") : "") + (sent ? '\nএবার "AI-কে পড়াও" চাপুন।' : ""));
+  };
+
+  const sendUp = async p => {                           // আপলোড বাকি ফাইল আবার ক্লাউডে পাঠাই
+    if (!user) { setMsg("ক্লাউড কানেক্ট নেই — আগে অ্যাপে Script URL ও secret দিয়ে কানেক্ট করুন।"); return false; }
+    setBusy("ক্লাউডে পাঠাচ্ছি: " + p.name);
+    try { await uploadFile(user, p); patchPdf(p); setMsg(""); setBusy(""); return true; }
+    catch (e) { setMsg("⚠️ " + p.name + " ক্লাউডে যায়নি — " + errText(e)); setBusy(""); return false; }
   };
 
   const ingestOne = async p => {
@@ -69,6 +81,7 @@ export default function AIPlanner({ courses = [], done = {} }) {
     setBusy("");
   };
   const ingestAll = async () => {
+    for (const p of [...libFiles, ...recentClass]) { if (!p.path && p.blob && !notes[p.id]) await sendUp(p); }
     const todo = [...libFiles, ...recentClass].filter(p => !notes[p.id] && p.path);
     if (!todo.length) { setMsg("সব ফাইল আগেই পড়া হয়ে গেছে।"); return; }
     for (let i = 0; i < todo.length; i++) {
@@ -181,10 +194,11 @@ export default function AIPlanner({ courses = [], done = {} }) {
     return (
       <div style={{ borderTop: "1px solid #1E293B", padding: "8px 0" }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 12, color: "#E2E8F0", flex: 1, minWidth: 140 }}>📄 {p.name}</span>
+          <span style={{ fontSize: 12, color: "#E2E8F0", flex: 1, minWidth: 140 }}>{String(p.name).match(/\.(jpe?g|png|webp|heic|heif)$/i) ? "🖼️" : "📄"} {p.name}</span>
           <span style={{ ...sub }}>{code(p.subjKey)} · {lib ? kindLabel(fileKind(p)) : "ক্লাস " + p.ds}</span>
           {n ? <span style={{ fontSize: 11, color: "#34D399" }}>✓ AI পড়েছে</span>
-            : <button style={btn("#A78BFA")} disabled={!!busy || !p.path} onClick={() => ingestOne(p)}>{p.path ? "AI-কে পড়াও" : "আপলোড বাকি"}</button>}
+            : p.path ? <button style={btn("#A78BFA")} disabled={!!busy} onClick={() => ingestOne(p)}>AI-কে পড়াও</button>
+              : <button style={btn("#F59E0B")} disabled={!!busy || !p.blob} onClick={() => sendUp(p)}>☁️ ক্লাউডে পাঠাও</button>}
           {lib && <button style={{ ...btn("#F87171"), padding: "4px 8px" }} onClick={() => removeLib(p)}>✕</button>}
         </div>
         {n && (
@@ -208,7 +222,7 @@ export default function AIPlanner({ courses = [], done = {} }) {
     <div>
       {(busy || msg) && (
         <div style={{ ...card, borderColor: busy ? "#A78BFA" : "#334155", fontSize: 12, color: "#E2E8F0" }}>
-          {busy ? "⏳ " + busy : msg}
+          <span style={{ whiteSpace: "pre-line" }}>{busy ? "⏳ " + busy : msg}</span>
         </div>
       )}
 
@@ -273,12 +287,12 @@ export default function AIPlanner({ courses = [], done = {} }) {
 
       {/* ব্যাচ আপলোড */}
       <div style={card}>
-        <div style={h}>📚 কোর্স লাইব্রেরি (একসাথে অনেক ফাইল)</div>
+        <div style={h}>📚 কোর্স লাইব্রেরি (PDF বা ছবি, একসাথে অনেক)</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <select style={{ ...inp, flex: 1, minWidth: 130 }} value={libCourse} onChange={e => setLibCourse(e.target.value)}>{courses.map(c => <option key={c.id} value={c.id}>{c.code}</option>)}</select>
           <select style={{ ...inp, flex: 1, minWidth: 130 }} value={libKind} onChange={e => setLibKind(e.target.value)}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         </div>
-        <input type="file" accept="application/pdf,.pdf" multiple disabled={!!busy} onChange={e => { uploadBatch(e.target.files); e.target.value = ""; }} style={{ fontSize: 12, color: "#94A3B8" }} />
+        <input type="file" accept="application/pdf,.pdf,image/jpeg,image/png,image/webp,image/heic" multiple disabled={!!busy} onChange={e => { uploadBatch(e.target.files); e.target.value = ""; }} style={{ fontSize: 12, color: "#94A3B8" }} />
         <div style={{ marginTop: 10 }}><button style={btn("#A78BFA")} disabled={!!busy} onClick={ingestAll}>🧠 নতুন সব ফাইল AI-কে পড়াও</button></div>
         {libFiles.length === 0 && recentClass.length === 0 && <div style={{ ...sub, marginTop: 8 }}>এখনো কোনো ফাইল নেই।</div>}
         <div style={{ marginTop: 6 }}>

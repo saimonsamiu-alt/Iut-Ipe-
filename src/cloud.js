@@ -41,14 +41,14 @@ const toB64 = blob => new Promise((res, rej) => {
   r.readAsDataURL(blob);
 });
 export async function uploadPdf(_u, rec) {
-  await call("put_pdf", { id: rec.id, occ: rec.occ, ds: rec.ds, subjKey: rec.subjKey, name: rec.name, size: rec.size, b64: await toB64(rec.blob) });
+  await call("put_pdf", { id: rec.id, occ: rec.occ, ds: rec.ds, subjKey: rec.subjKey, name: rec.name, size: rec.size, mime: (rec.blob && rec.blob.type) || "", b64: await toB64(rec.blob) });
   return rec.id; // path = id
 }
 export async function downloadPdf(path) {
-  const { b64 } = await call("get_pdf", { id: path });
+  const { b64, mime } = await call("get_pdf", { id: path });
   const bin = atob(b64), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type: "application/pdf" });
+  return new Blob([bytes], { type: mime || "application/pdf" });
 }
 export async function deleteRemotePdf(path, id) { await call("del_pdf", { id: id || path }); }
 

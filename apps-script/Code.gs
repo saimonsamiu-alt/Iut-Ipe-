@@ -16,6 +16,7 @@ const CHUNK = 45000;                               // Sheet cell limit এড়
 // API key কোডে লিখবেন না: Apps Script → Project Settings → Script properties → GEMINI_API_KEY
 // মডেল বদলাতে চাইলে শুধু নিচের নামটা পাল্টান (সস্তা/দ্রুত চাইলে "gemini-3.5-flash-lite")
 const AI_MODEL = "gemini-3.8-flash";
+const ALLOWED_MIME = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const AI_MAX_FILE = 14 * 1024 * 1024;             // Gemini inline limit ~20MB (base64-এ বাড়ে), তাই এর বেশি নয়
 
 function sheet_(name) { const ss = SpreadsheetApp.getActiveSpreadsheet(); return ss.getSheetByName(name) || ss.insertSheet(name); }
@@ -122,7 +123,7 @@ function ingest_(id) {
   if (bytes.length > AI_MAX_FILE) throw new Error("ফাইল বড় (২০MB-র বেশি), ছোট করে দিন");
   const mime = blob.getContentType() || "application/pdf";
   const b64 = Utilities.base64Encode(bytes);
-  const mt = mime.indexOf("image/") === 0 ? mime : "application/pdf";
+  const mt = ALLOWED_MIME.indexOf(mime) >= 0 ? mime : "application/pdf";
   const text = aiCall_(INGEST_SYSTEM, [
     { inlineData: { mimeType: mt, data: b64 } },
     { text: "ফাইলের নাম: " + hit.name + "\nকোর্স/ধরন (ইউজারের দেওয়া): " + hit.occ }
@@ -152,7 +153,8 @@ function handle_(req) {
     case "list_pdfs": return { ok: true, rows: pdfRows_().map(r => { delete r.fileId; delete r.row; return r; }) };
     case "put_pdf": {
       dropPdf_(req.id); // একই id আবার এলে replace
-      const blob = Utilities.newBlob(Utilities.base64Decode(req.b64), "application/pdf", req.name);
+      const mime = ALLOWED_MIME.indexOf(req.mime) >= 0 ? req.mime : "application/pdf";   // PDF বা ছবি
+      const blob = Utilities.newBlob(Utilities.base64Decode(req.b64), mime, req.name);
       const file = folder_().createFile(blob);
       const sh = pdfSheet_(), row = sh.getLastRow() + 1, rg = sh.getRange(row, 1, 1, 7);
       rg.setNumberFormat("@");
@@ -162,7 +164,8 @@ function handle_(req) {
     case "get_pdf": {
       const hit = findPdf_(req.id);
       if (!hit) throw new Error("PDF পাওয়া যায়নি");
-      return { ok: true, b64: Utilities.base64Encode(DriveApp.getFileById(hit.fileId).getBlob().getBytes()) };
+      const gb = DriveApp.getFileById(hit.fileId).getBlob();
+      return { ok: true, mime: gb.getContentType(), b64: Utilities.base64Encode(gb.getBytes()) };
     }
     case "del_pdf": dropPdf_(req.id); return { ok: true };
     case "ai_ingest": return { ok: true, note: ingest_(req.id) };
